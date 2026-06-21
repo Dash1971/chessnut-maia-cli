@@ -97,9 +97,8 @@ def watch(
                         san = controller.board.san(move)
                         controller.board.push(move)
                         typer.echo(f"Move: {move.uci()} ({san})")
-                    except ValueError as exc:
-                        synchronized = False
-                        typer.echo(f"Move: unknown ({exc})")
+                    except ValueError:
+                        typer.echo("Move: pending")
             typer.echo(state.render())
             if previous is None:
                 synchronized = current == board_to_piece_map(controller.board)
