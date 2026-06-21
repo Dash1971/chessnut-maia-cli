@@ -46,6 +46,13 @@ Current focus:
 The Bluetooth protocol layer is not yet validated against a physical Chessnut Go
 board.
 
+## Attribution
+
+Chessnut Bluetooth protocol details are adapted from Roberto Marabini's GPL-3.0
+Chessnut Air Python reference:
+
+https://github.com/rmarabini/chessnutair
+
 ## Install for development
 
 ```bash

@@ -1,0 +1,79 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+import pytest
+
+from chessnut_maia_cli.board import (
+    BoardState,
+    decode_board_notification,
+    decode_board_payload,
+    encode_led_command,
+)
+
+
+STARTING_POSITION_PAYLOAD = bytes.fromhex(
+    "58 23 31 85 44 44 44 44"
+    "00 00 00 00 00 00 00 00"
+    "00 00 00 00 00 00 00 00"
+    "77 77 77 77 A6 C9 9B 6A"
+)
+
+
+def test_decode_starting_position_payload() -> None:
+    state = decode_board_payload(STARTING_POSITION_PAYLOAD)
+
+    assert state.normalized() == {
+        "a1": "R",
+        "b1": "N",
+        "c1": "B",
+        "d1": "Q",
+        "e1": "K",
+        "f1": "B",
+        "g1": "N",
+        "h1": "R",
+        "a2": "P",
+        "b2": "P",
+        "c2": "P",
+        "d2": "P",
+        "e2": "P",
+        "f2": "P",
+        "g2": "P",
+        "h2": "P",
+        "a7": "p",
+        "b7": "p",
+        "c7": "p",
+        "d7": "p",
+        "e7": "p",
+        "f7": "p",
+        "g7": "p",
+        "h7": "p",
+        "a8": "r",
+        "b8": "n",
+        "c8": "b",
+        "d8": "q",
+        "e8": "k",
+        "f8": "b",
+        "g8": "n",
+        "h8": "r",
+    }
+
+
+def test_decode_full_notification() -> None:
+    notification = b"\x01\x24" + STARTING_POSITION_PAYLOAD + b"\x00\x00\x00\x00"
+    state = decode_board_notification(notification)
+    assert state.normalized()["e1"] == "K"
+    assert state.normalized()["e8"] == "k"
+
+
+def test_render_board_state() -> None:
+    state = BoardState({"e4": "P", "e5": "p"})
+    assert state.render().splitlines()[3] == "5  . . . . p . . ."
+    assert state.render().splitlines()[4] == "4  . . . . P . . ."
+
+
+def test_encode_led_command_for_move() -> None:
+    assert encode_led_command(["e2", "e4"]) == bytes.fromhex("0A 08 00 00 00 00 08 00 08 00")
+
+
+def test_encode_led_command_rejects_bad_square() -> None:
+    with pytest.raises(ValueError, match="Invalid square"):
+        encode_led_command(["i9"])

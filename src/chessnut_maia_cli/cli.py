@@ -9,7 +9,7 @@ from enum import Enum
 
 import typer
 
-from .board import ChessnutBoard
+from .board import BoardDevice, ChessnutBoard
 from .engine import EngineConfig
 
 
@@ -42,11 +42,26 @@ def scan(timeout: float = typer.Option(5.0, help="Bluetooth scan timeout in seco
 
 
 @app.command()
-def read() -> None:
+def read(
+    address: str | None = typer.Option(None, help="Board BLE address. If omitted, scan first."),
+    timeout: float = typer.Option(10.0, help="Seconds to wait for a board notification."),
+) -> None:
     """Read live board states from a Chessnut board."""
 
-    typer.echo("Board reading is not implemented yet.")
-    raise typer.Exit(code=1)
+    async def _read() -> None:
+        if address is None:
+            devices = await ChessnutBoard.scan(timeout=5.0)
+            if not devices:
+                typer.echo("No Chessnut boards found.")
+                raise typer.Exit(code=1)
+            device = devices[0]
+        else:
+            device = BoardDevice(name="Chessnut", address=address)
+
+        state = await ChessnutBoard(device).read_once(timeout=timeout)
+        typer.echo(state.render())
+
+    asyncio.run(_read())
 
 
 @app.command()
