@@ -11,6 +11,7 @@ import typer
 
 from .board import BoardDevice, ChessnutBoard
 from .engine import EngineConfig
+from .game import GameController, board_to_piece_map, infer_legal_move
 
 
 class EngineName(str, Enum):
@@ -81,14 +82,29 @@ def watch(
     async def _watch() -> None:
         device = await _resolve_board(address, scan_timeout=scan_timeout)
         typer.echo(f"Connected to {device.name} {device.address}. Press Ctrl-C to stop.")
+        controller = GameController()
         previous: dict[str, str] | None = None
+        synchronized = False
         async for state in ChessnutBoard(device).watch():
             current = state.normalized()
             if current == previous:
                 continue
             if previous is not None:
                 typer.echo("")
+                if synchronized:
+                    try:
+                        move = infer_legal_move(controller.board, state)
+                        san = controller.board.san(move)
+                        controller.board.push(move)
+                        typer.echo(f"Move: {move.uci()} ({san})")
+                    except ValueError as exc:
+                        synchronized = False
+                        typer.echo(f"Move: unknown ({exc})")
             typer.echo(state.render())
+            if previous is None:
+                synchronized = current == board_to_piece_map(controller.board)
+                if not synchronized:
+                    typer.echo("Move inference paused: set up the starting position first.")
             previous = current
 
     try:
