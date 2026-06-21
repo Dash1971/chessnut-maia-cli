@@ -1,0 +1,59 @@
+# chessnut-maia-cli
+
+CLI bridge for playing Maia2 and Maia3 on a Chessnut Go electronic board over
+Bluetooth LE.
+
+This project is early-stage. The first target is a small macOS-friendly command
+line app that can:
+
+- connect to a Chessnut Go board over Bluetooth LE,
+- read the physical board position,
+- infer the human move,
+- send the current position to a local Maia2 or Maia3 UCI engine,
+- show the bot move in the terminal and on the board LEDs.
+
+## Planned commands
+
+```bash
+chessnut-maia scan
+chessnut-maia read
+chessnut-maia play --engine maia3 --color white
+chessnut-maia play --engine maia2 --elo 1500 --color black
+```
+
+## Expected local engine paths
+
+The default engine paths follow the Maia local-stack guides:
+
+```text
+~/chess/maia2-engine/maia2-engine.sh
+~/chess/maia3-engine/maia3-engine.sh
+```
+
+Both engines are treated as UCI-compatible command-line engines. Custom paths
+will be supported through CLI options.
+
+## Development status
+
+Current focus:
+
+1. package skeleton,
+2. legal move inference from observed board states,
+3. UCI engine launching,
+4. Chessnut Go Bluetooth scanning and board-state decoding,
+5. playable human-vs-Maia loop.
+
+The Bluetooth protocol layer is not yet validated against a physical Chessnut Go
+board.
+
+## Install for development
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -e ".[dev]"
+```
+
+## License
+
+GPL-3.0-or-later. See `LICENSE`.
