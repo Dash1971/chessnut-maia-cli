@@ -17,6 +17,7 @@ line app that can:
 ```bash
 chessnut-maia scan
 chessnut-maia read
+chessnut-maia watch
 chessnut-maia play --engine maia3 --color white
 chessnut-maia play --engine maia2 --elo 1500 --color black
 ```
@@ -43,8 +44,15 @@ Current focus:
 4. Chessnut Go Bluetooth scanning and board-state decoding,
 5. playable human-vs-Maia loop.
 
-The Bluetooth protocol layer is not yet validated against a physical Chessnut Go
-board.
+Validated on a physical Chessnut Go:
+
+- Bluetooth scanning,
+- one-shot board reads,
+- persistent board-state watching,
+- transient lifted-piece handling,
+- legal move inference from physical moves.
+
+The first `play` loop is experimental and currently targets human-as-White.
 
 ## Attribution
 
