@@ -26,6 +26,21 @@ class PlayerColor(str, Enum):
 app = typer.Typer(help="Play Maia engines on a Chessnut Go board.")
 
 
+async def _resolve_board(address: str | None, scan_timeout: float = 5.0) -> BoardDevice:
+    devices = await ChessnutBoard.scan(timeout=scan_timeout)
+    if address is None:
+        if not devices:
+            typer.echo("No Chessnut boards found.")
+            raise typer.Exit(code=1)
+        return devices[0]
+
+    for device in devices:
+        if device.address == address:
+            return device
+
+    return BoardDevice(name="Chessnut", address=address)
+
+
 @app.command()
 def scan(timeout: float = typer.Option(5.0, help="Bluetooth scan timeout in seconds.")) -> None:
     """Scan for nearby Chessnut boards."""
@@ -49,19 +64,37 @@ def read(
     """Read live board states from a Chessnut board."""
 
     async def _read() -> None:
-        if address is None:
-            devices = await ChessnutBoard.scan(timeout=5.0)
-            if not devices:
-                typer.echo("No Chessnut boards found.")
-                raise typer.Exit(code=1)
-            device = devices[0]
-        else:
-            device = BoardDevice(name="Chessnut", address=address)
-
+        device = await _resolve_board(address, scan_timeout=5.0)
         state = await ChessnutBoard(device).read_once(timeout=timeout)
         typer.echo(state.render())
 
     asyncio.run(_read())
+
+
+@app.command()
+def watch(
+    address: str | None = typer.Option(None, help="Board BLE address. If omitted, scan first."),
+    scan_timeout: float = typer.Option(5.0, help="Bluetooth scan timeout in seconds."),
+) -> None:
+    """Keep the board connected and print each changed board state."""
+
+    async def _watch() -> None:
+        device = await _resolve_board(address, scan_timeout=scan_timeout)
+        typer.echo(f"Connected to {device.name} {device.address}. Press Ctrl-C to stop.")
+        previous: dict[str, str] | None = None
+        async for state in ChessnutBoard(device).watch():
+            current = state.normalized()
+            if current == previous:
+                continue
+            if previous is not None:
+                typer.echo("")
+            typer.echo(state.render())
+            previous = current
+
+    try:
+        asyncio.run(_watch())
+    except KeyboardInterrupt:
+        typer.echo("\nDisconnected.")
 
 
 @app.command()

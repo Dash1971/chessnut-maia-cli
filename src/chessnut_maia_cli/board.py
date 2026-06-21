@@ -9,6 +9,7 @@ Roberto Marabini: https://github.com/rmarabini/chessnutair
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Iterable, Mapping
 
@@ -70,6 +71,7 @@ class BoardState:
 class BoardDevice:
     name: str
     address: str
+    backend_device: object | None = None
 
 
 class ChessnutBoard:
@@ -93,7 +95,9 @@ class ChessnutBoard:
         for device in devices:
             name = device.name or ""
             if any(hint.lower() in name.lower() for hint in DEVICE_NAME_HINTS):
-                matches.append(BoardDevice(name=name, address=device.address))
+                matches.append(
+                    BoardDevice(name=name, address=device.address, backend_device=device)
+                )
         return matches
 
     async def connect(self) -> None:
@@ -102,7 +106,7 @@ class ChessnutBoard:
         except ImportError as exc:  # pragma: no cover - dependency guard
             raise RuntimeError("Install bleak to connect to Chessnut boards.") from exc
 
-        self._client = BleakClient(self.device.address)
+        self._client = BleakClient(self.device.backend_device or self.device.address)
         await self._client.connect()
 
     async def disconnect(self) -> None:
@@ -135,6 +139,31 @@ class ChessnutBoard:
             await self._client.start_notify(READ_DATA_CHARACTERISTIC, notification_handler)
             await self.initialize()
             return await asyncio.wait_for(queue.get(), timeout=timeout)
+        finally:
+            if self._client is not None:
+                await self._client.stop_notify(READ_DATA_CHARACTERISTIC)
+            await self.disconnect()
+
+    async def watch(self) -> AsyncIterator[BoardState]:
+        """Keep the board connected and yield each decoded board state."""
+
+        queue: asyncio.Queue[BoardState] = asyncio.Queue()
+
+        def notification_handler(_characteristic: object, data: bytearray) -> None:
+            try:
+                state = decode_board_notification(bytes(data))
+            except ValueError:
+                return
+            queue.put_nowait(state)
+
+        await self.connect()
+        try:
+            if self._client is None:
+                raise RuntimeError("Board is not connected.")
+            await self._client.start_notify(READ_DATA_CHARACTERISTIC, notification_handler)
+            await self.initialize()
+            while True:
+                yield await queue.get()
         finally:
             if self._client is not None:
                 await self._client.stop_notify(READ_DATA_CHARACTERISTIC)
