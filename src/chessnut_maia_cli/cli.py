@@ -193,7 +193,19 @@ def play(
                 typer.echo(f"White: {human_move.uci()} ({human_san})")
                 typer.echo(state.render())
 
+                if controller.board.is_game_over(claim_draw=True):
+                    await board.set_leds([])
+                    typer.echo(f"Game over: {controller.board.result(claim_draw=True)}")
+                    previous = current
+                    break
+
                 maia_move = maia.play(controller.board, movetime_ms=movetime_ms)
+                if maia_move is None or maia_move.uci() == "0000":
+                    await board.set_leds([])
+                    typer.echo(f"Game over: {controller.board.result(claim_draw=True)}")
+                    previous = current
+                    break
+
                 maia_san = controller.board.san(maia_move)
                 controller.board.push(maia_move)
                 typer.echo(f"Maia: {maia_move.uci()} ({maia_san})")
