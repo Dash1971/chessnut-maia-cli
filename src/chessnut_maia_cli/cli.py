@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import date
 from enum import Enum
 from pathlib import Path
 
@@ -41,6 +42,44 @@ async def _resolve_board(address: str | None, scan_timeout: float = 5.0) -> Boar
             return device
 
     return BoardDevice(name="Chessnut", address=address)
+
+
+def _format_pgn(
+    controller: GameController,
+    *,
+    black: str,
+    result: str | None = None,
+    termination: str | None = None,
+) -> str:
+    import chess.pgn
+
+    board = controller.board
+    final_result = result or (
+        board.result(claim_draw=True) if board.is_game_over(claim_draw=True) else "*"
+    )
+    game = chess.pgn.Game.from_board(board)
+    game.headers["Event"] = "Chessnut Maia CLI game"
+    game.headers["Site"] = "Chessnut Go / local engine"
+    game.headers["Date"] = date.today().strftime("%Y.%m.%d")
+    game.headers["Round"] = "-"
+    game.headers["White"] = "Human"
+    game.headers["Black"] = black
+    game.headers["Result"] = final_result
+    if termination is not None:
+        game.headers["Termination"] = termination
+    return str(game)
+
+
+def _print_pgn(
+    controller: GameController,
+    *,
+    black: str,
+    result: str | None = None,
+    termination: str | None = None,
+) -> None:
+    typer.echo("")
+    typer.echo("PGN:")
+    typer.echo(_format_pgn(controller, black=black, result=result, termination=termination))
 
 
 @app.command()
@@ -132,7 +171,10 @@ def play(
         typer.echo("Only human-as-white play is implemented so far.")
         raise typer.Exit(code=1)
 
+    controller: GameController | None = None
+
     async def _play() -> None:
+        nonlocal controller
         device = await _resolve_board(address, scan_timeout=scan_timeout)
         board = ChessnutBoard(device)
         controller = GameController()
@@ -170,6 +212,16 @@ def play(
                     if waiting_for_engine_move:
                         await board.set_leds([])
                         waiting_for_engine_move = False
+                        if controller.board.is_game_over(claim_draw=True):
+                            result = controller.board.result(claim_draw=True)
+                            typer.echo(f"Game over: {result}")
+                            _print_pgn(
+                                controller,
+                                black=config.name,
+                                result=result,
+                                termination="Game over",
+                            )
+                            break
                         typer.echo("Ready for White's move.")
                     previous = current
                     continue
@@ -195,14 +247,28 @@ def play(
 
                 if controller.board.is_game_over(claim_draw=True):
                     await board.set_leds([])
-                    typer.echo(f"Game over: {controller.board.result(claim_draw=True)}")
+                    result = controller.board.result(claim_draw=True)
+                    typer.echo(f"Game over: {result}")
+                    _print_pgn(
+                        controller,
+                        black=config.name,
+                        result=result,
+                        termination="Game over",
+                    )
                     previous = current
                     break
 
                 maia_move = maia.play(controller.board, movetime_ms=movetime_ms)
                 if maia_move is None or maia_move.uci() == "0000":
                     await board.set_leds([])
-                    typer.echo(f"Game over: {controller.board.result(claim_draw=True)}")
+                    result = controller.board.result(claim_draw=True)
+                    typer.echo(f"Game over: {result}")
+                    _print_pgn(
+                        controller,
+                        black=config.name,
+                        result=result,
+                        termination="No legal engine move",
+                    )
                     previous = current
                     break
 
@@ -219,6 +285,13 @@ def play(
         asyncio.run(_play())
     except KeyboardInterrupt:
         typer.echo("\nDisconnected.")
+        if controller is not None and controller.board.move_stack:
+            _print_pgn(
+                controller,
+                black=config.name,
+                result="*",
+                termination="Interrupted by user",
+            )
 
 
 if __name__ == "__main__":
