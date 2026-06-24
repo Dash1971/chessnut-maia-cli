@@ -18,8 +18,9 @@ line app that can:
 chessnut-maia scan
 chessnut-maia read
 chessnut-maia watch
+chessnut-maia play --engine maia2 --elo 1500 --book-file ~/chess/books/lichess_1600_all.bin --color white
+chessnut-maia play --engine maia2 --elo 1500 --book-file ~/chess/books/lichess_1600_all.bin --color black
 chessnut-maia play --engine maia3 --color white
-chessnut-maia play --engine maia2 --elo 1500 --color black
 ```
 
 ## Expected local engine paths
@@ -52,7 +53,13 @@ Validated on a physical Chessnut Go:
 - transient lifted-piece handling,
 - legal move inference from physical moves.
 
-The first `play` loop is experimental and currently targets human-as-White.
+The first `play` loop is experimental, with support for human-as-White and
+human-as-Black. When playing as Black, Maia moves first, lights the move on the
+board, and waits for the player to make Maia's move physically before accepting
+Black's reply.
+
+For Maia2 book play, pass a Polyglot book with `--book-file`. The CLI forwards
+that path to the Maia wrapper's `BookFile` UCI option.
 
 ## Attribution
 

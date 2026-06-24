@@ -47,6 +47,7 @@ async def _resolve_board(address: str | None, scan_timeout: float = 5.0) -> Boar
 def _format_pgn(
     controller: GameController,
     *,
+    white: str,
     black: str,
     result: str | None = None,
     termination: str | None = None,
@@ -62,7 +63,7 @@ def _format_pgn(
     game.headers["Site"] = "Chessnut Go / local engine"
     game.headers["Date"] = date.today().strftime("%Y.%m.%d")
     game.headers["Round"] = "-"
-    game.headers["White"] = "Human"
+    game.headers["White"] = white
     game.headers["Black"] = black
     game.headers["Result"] = final_result
     if termination is not None:
@@ -73,13 +74,22 @@ def _format_pgn(
 def _print_pgn(
     controller: GameController,
     *,
+    white: str,
     black: str,
     result: str | None = None,
     termination: str | None = None,
 ) -> None:
     typer.echo("")
     typer.echo("PGN:")
-    typer.echo(_format_pgn(controller, black=black, result=result, termination=termination))
+    typer.echo(
+        _format_pgn(
+            controller,
+            white=white,
+            black=black,
+            result=result,
+            termination=termination,
+        )
+    )
 
 
 @app.command()
@@ -154,9 +164,11 @@ def watch(
 
 @app.command()
 def play(
-    engine: EngineName = typer.Option(EngineName.maia3, help="Maia engine to play."),
+    engine: EngineName = typer.Option(EngineName.maia2, help="Maia engine to play."),
     color: PlayerColor = typer.Option(PlayerColor.white, help="Human player color."),
-    elo: int | None = typer.Option(None, help="Optional Maia2 UCI Elo setting."),
+    elo: int | None = typer.Option(None, help="Optional Maia UCI Elo setting."),
+    book_file: Path | None = typer.Option(None, help="Optional Polyglot opening book path."),
+    human_time: bool = typer.Option(False, help="Enable the engine wrapper's HumanTime option."),
     movetime_ms: int = typer.Option(1000, help="Engine move time in milliseconds."),
     engine_path: Path | None = typer.Option(None, help="Custom UCI engine launcher path."),
     address: str | None = typer.Option(None, help="Board BLE address. If omitted, scan first."),
@@ -164,12 +176,25 @@ def play(
 ) -> None:
     """Play a game against Maia on a Chessnut board."""
 
-    config = EngineConfig.default(engine.value, elo=elo)
+    config = EngineConfig.default(
+        engine.value,
+        elo=elo,
+        book_file=book_file,
+        human_time=human_time,
+    )
     if engine_path is not None:
-        config = EngineConfig(config.name, engine_path.expanduser(), config.elo)
-    if color != PlayerColor.white:
-        typer.echo("Only human-as-white play is implemented so far.")
-        raise typer.Exit(code=1)
+        config = EngineConfig(
+            config.name,
+            engine_path.expanduser(),
+            config.elo,
+            config.book_file,
+            config.human_time,
+        )
+    human_is_white = color == PlayerColor.white
+    human_color_name = "White" if human_is_white else "Black"
+    engine_color_name = "Black" if human_is_white else "White"
+    pgn_white = "Human" if human_is_white else config.name
+    pgn_black = config.name if human_is_white else "Human"
 
     controller: GameController | None = None
 
@@ -184,10 +209,43 @@ def play(
 
         typer.echo(f"Connected to {device.name} {device.address}. Press Ctrl-C to stop.")
         typer.echo(f"Engine: {config.name} at {config.path}")
+        if config.book_file is not None:
+            typer.echo(f"Book: {config.book_file}")
+        typer.echo(f"Human: {human_color_name}")
         typer.echo(f"Move time: {movetime_ms} ms")
 
         maia = MaiaEngine(config)
         maia.start()
+
+        async def finish_game(result: str, termination: str) -> None:
+            await board.set_leds([])
+            typer.echo(f"Game over: {result}")
+            _print_pgn(
+                controller,
+                white=pgn_white,
+                black=pgn_black,
+                result=result,
+                termination=termination,
+            )
+
+        async def play_engine_move() -> bool:
+            maia_move = maia.play(controller.board, movetime_ms=movetime_ms)
+            if maia_move is None or maia_move.uci() == "0000":
+                result = controller.board.result(claim_draw=True)
+                await finish_game(result, "No legal engine move")
+                return False
+
+            maia_san = controller.board.san(maia_move)
+            controller.board.push(maia_move)
+            typer.echo(f"{engine_color_name}: {maia_move.uci()} ({maia_san})")
+            await board.set_leds([maia_move.uci()[:2], maia_move.uci()[2:4]])
+            return True
+
+        def is_human_turn() -> bool:
+            import chess
+
+            return controller.board.turn == (chess.WHITE if human_is_white else chess.BLACK)
+
         try:
             async for state in board.watch():
                 current = state.normalized()
@@ -201,7 +259,11 @@ def play(
                     synchronized = current == expected
                     typer.echo(state.render())
                     if synchronized:
-                        typer.echo("Ready for White's move.")
+                        if is_human_turn():
+                            typer.echo(f"Ready for {human_color_name}'s move.")
+                        else:
+                            if await play_engine_move():
+                                waiting_for_engine_move = True
                     else:
                         typer.echo("Set up the starting position to begin.")
                     previous = current
@@ -214,15 +276,13 @@ def play(
                         waiting_for_engine_move = False
                         if controller.board.is_game_over(claim_draw=True):
                             result = controller.board.result(claim_draw=True)
-                            typer.echo(f"Game over: {result}")
-                            _print_pgn(
-                                controller,
-                                black=config.name,
-                                result=result,
-                                termination="Game over",
-                            )
+                            await finish_game(result, "Game over")
                             break
-                        typer.echo("Ready for White's move.")
+                        if is_human_turn():
+                            typer.echo(f"Ready for {human_color_name}'s move.")
+                        else:
+                            if await play_engine_move():
+                                waiting_for_engine_move = True
                     previous = current
                     continue
 
@@ -232,51 +292,36 @@ def play(
                     previous = current
                     continue
 
+                if not is_human_turn():
+                    typer.echo("Maia move: pending")
+                    typer.echo(state.render())
+                    previous = current
+                    continue
+
                 try:
                     human_move = infer_legal_move(controller.board, state)
                 except ValueError:
-                    typer.echo("White move: pending")
+                    typer.echo(f"{human_color_name} move: pending")
                     typer.echo(state.render())
                     previous = current
                     continue
 
                 human_san = controller.board.san(human_move)
                 controller.board.push(human_move)
-                typer.echo(f"White: {human_move.uci()} ({human_san})")
+                typer.echo(f"{human_color_name}: {human_move.uci()} ({human_san})")
                 typer.echo(state.render())
 
                 if controller.board.is_game_over(claim_draw=True):
-                    await board.set_leds([])
                     result = controller.board.result(claim_draw=True)
-                    typer.echo(f"Game over: {result}")
-                    _print_pgn(
-                        controller,
-                        black=config.name,
-                        result=result,
-                        termination="Game over",
-                    )
+                    await finish_game(result, "Game over")
                     previous = current
                     break
 
-                maia_move = maia.play(controller.board, movetime_ms=movetime_ms)
-                if maia_move is None or maia_move.uci() == "0000":
-                    await board.set_leds([])
-                    result = controller.board.result(claim_draw=True)
-                    typer.echo(f"Game over: {result}")
-                    _print_pgn(
-                        controller,
-                        black=config.name,
-                        result=result,
-                        termination="No legal engine move",
-                    )
+                if await play_engine_move():
+                    waiting_for_engine_move = True
+                else:
                     previous = current
                     break
-
-                maia_san = controller.board.san(maia_move)
-                controller.board.push(maia_move)
-                typer.echo(f"Maia: {maia_move.uci()} ({maia_san})")
-                await board.set_leds([maia_move.uci()[:2], maia_move.uci()[2:4]])
-                waiting_for_engine_move = True
                 previous = current
         finally:
             maia.quit()
@@ -288,7 +333,8 @@ def play(
         if controller is not None and controller.board.move_stack:
             _print_pgn(
                 controller,
-                black=config.name,
+                white=pgn_white,
+                black=pgn_black,
                 result="*",
                 termination="Interrupted by user",
             )

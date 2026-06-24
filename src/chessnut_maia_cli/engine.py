@@ -19,13 +19,27 @@ class EngineConfig:
     name: str
     path: Path
     elo: int | None = None
+    book_file: Path | None = None
+    human_time: bool | None = None
 
     @classmethod
-    def default(cls, name: str, elo: int | None = None) -> "EngineConfig":
+    def default(
+        cls,
+        name: str,
+        elo: int | None = None,
+        book_file: Path | None = None,
+        human_time: bool | None = None,
+    ) -> "EngineConfig":
         if name not in DEFAULT_ENGINE_PATHS:
             supported = ", ".join(sorted(DEFAULT_ENGINE_PATHS))
             raise ValueError(f"Unsupported engine {name!r}. Choose one of: {supported}.")
-        return cls(name=name, path=DEFAULT_ENGINE_PATHS[name].expanduser(), elo=elo)
+        return cls(
+            name=name,
+            path=DEFAULT_ENGINE_PATHS[name].expanduser(),
+            elo=elo,
+            book_file=book_file.expanduser() if book_file is not None else None,
+            human_time=human_time,
+        )
 
 
 class MaiaEngine:
@@ -52,9 +66,16 @@ class MaiaEngine:
             raise FileNotFoundError(f"Engine launcher not found: {self.config.path}")
 
         self._engine = chess.engine.SimpleEngine.popen_uci(str(self.config.path))
+        options = {}
         if self.config.elo is not None:
             option_name = "ELO" if self.config.name == "maia2" else "Elo"
-            self._engine.configure({option_name: self.config.elo})
+            options[option_name] = self.config.elo
+        if self.config.book_file is not None:
+            options["BookFile"] = str(self.config.book_file)
+        if self.config.human_time is not None:
+            options["HumanTime"] = self.config.human_time
+        if options:
+            self._engine.configure(options)
 
     def play(self, board: "chess.Board", movetime_ms: int = 1000) -> "chess.Move":
         if self._engine is None:
