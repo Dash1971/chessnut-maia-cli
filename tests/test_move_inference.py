@@ -4,7 +4,7 @@ import chess
 import pytest
 
 from chessnut_maia_cli.board import BoardState
-from chessnut_maia_cli.game import board_to_piece_map, infer_legal_move
+from chessnut_maia_cli.game import board_from_piece_map, board_to_piece_map, infer_legal_move
 
 
 def observed_after(board: chess.Board, move_uci: str) -> BoardState:
@@ -32,6 +32,27 @@ def test_infers_kingside_castle() -> None:
     board = chess.Board("rnbqkbnr/pppppppp/8/8/8/5N2/PPPPBPPP/RNBQK2R w KQkq - 2 3")
     move = infer_legal_move(board, observed_after(board, "e1g1"))
     assert move == chess.Move.from_uci("e1g1")
+
+
+def test_builds_board_from_physical_position() -> None:
+    original = chess.Board()
+    for move in ["e2e4", "e7e5", "g1f3"]:
+        original.push(chess.Move.from_uci(move))
+
+    resumed = board_from_piece_map(board_to_piece_map(original), white_to_move=False)
+
+    assert board_to_piece_map(resumed) == board_to_piece_map(original)
+    assert resumed.turn == chess.BLACK
+
+
+def test_resumed_castled_position_has_no_castling_rights_for_castled_side() -> None:
+    board = chess.Board("rnbqkbnr/pppppppp/8/8/8/5N2/PPPPBPPP/RNBQK2R w KQkq - 2 3")
+    board.push(chess.Move.from_uci("e1g1"))
+
+    resumed = board_from_piece_map(board_to_piece_map(board), white_to_move=False)
+
+    assert not resumed.has_castling_rights(chess.WHITE)
+    assert resumed.has_castling_rights(chess.BLACK)
 
 
 def test_rejects_impossible_observation() -> None:

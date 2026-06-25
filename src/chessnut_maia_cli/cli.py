@@ -5,15 +5,17 @@
 from __future__ import annotations
 
 import asyncio
+import sys
+from collections.abc import AsyncIterator
 from datetime import date
 from enum import Enum
 from pathlib import Path
 
 import typer
 
-from .board import BoardDevice, ChessnutBoard
+from .board import BoardDevice, BoardState, ChessnutBoard
 from .engine import EngineConfig, MaiaEngine
-from .game import GameController, board_to_piece_map, infer_legal_move
+from .game import GameController, board_from_piece_map, board_to_piece_map, infer_legal_move
 
 
 class EngineName(str, Enum):
@@ -27,6 +29,12 @@ class PlayerColor(str, Enum):
 
 
 app = typer.Typer(help="Play Maia engines on a Chessnut Go board.")
+
+
+PLAY_COMMANDS = (
+    "Commands: reset=resync from board, reset white/reset black=resync with turn, "
+    "help=show commands, quit=stop."
+)
 
 
 async def _resolve_board(address: str | None, scan_timeout: float = 5.0) -> BoardDevice:
@@ -90,6 +98,26 @@ def _print_pgn(
             termination=termination,
         )
     )
+
+
+def _prompt_white_to_move() -> bool:
+    while True:
+        value = typer.prompt("Whose move is it? [white/black]").strip().lower()
+        if value in {"w", "white"}:
+            return True
+        if value in {"b", "black"}:
+            return False
+        typer.echo("Please enter white or black.")
+
+
+def _resume_board_from_state(
+    state: BoardState,
+    *,
+    white_to_move: bool | None = None,
+) -> "chess.Board":
+    if white_to_move is None:
+        white_to_move = _prompt_white_to_move()
+    return board_from_piece_map(state.normalized(), white_to_move=white_to_move)
 
 
 @app.command()
@@ -206,6 +234,7 @@ def play(
         synchronized = False
         waiting_for_engine_move = False
         previous: dict[str, str] | None = None
+        latest_state: BoardState | None = None
 
         typer.echo(f"Connected to {device.name} {device.address}. Press Ctrl-C to stop.")
         typer.echo(f"Engine: {config.name} at {config.path}")
@@ -213,9 +242,12 @@ def play(
             typer.echo(f"Book: {config.book_file}")
         typer.echo(f"Human: {human_color_name}")
         typer.echo(f"Move time: {movetime_ms} ms")
+        typer.echo(PLAY_COMMANDS)
 
         maia = MaiaEngine(config)
         maia.start()
+        command_queue: asyncio.Queue[str] = asyncio.Queue()
+        terminal_reader_active = False
 
         async def finish_game(result: str, termination: str) -> None:
             await board.set_leds([])
@@ -246,8 +278,112 @@ def play(
 
             return controller.board.turn == (chess.WHITE if human_is_white else chess.BLACK)
 
+        def install_terminal_reader() -> None:
+            nonlocal terminal_reader_active
+            if terminal_reader_active or not sys.stdin.isatty():
+                return
+
+            def queue_terminal_line() -> None:
+                line = sys.stdin.readline()
+                if line:
+                    command_queue.put_nowait(line.strip().lower())
+
+            asyncio.get_running_loop().add_reader(sys.stdin.fileno(), queue_terminal_line)
+            terminal_reader_active = True
+
+        def remove_terminal_reader() -> None:
+            nonlocal terminal_reader_active
+            if terminal_reader_active:
+                asyncio.get_running_loop().remove_reader(sys.stdin.fileno())
+                terminal_reader_active = False
+
+        def command_turn(command: str) -> bool | None:
+            parts = command.split()
+            if len(parts) < 2:
+                return None
+            if parts[1] in {"w", "white"}:
+                return True
+            if parts[1] in {"b", "black"}:
+                return False
+            return None
+
+        async def handle_command(command: str) -> bool:
+            nonlocal previous, synchronized, waiting_for_engine_move
+            command_name = command.split()[0] if command else ""
+            if command_name in {"", "help", "h", "?"}:
+                typer.echo(PLAY_COMMANDS)
+                return True
+            if command_name in {"quit", "q", "exit"}:
+                if controller.board.move_stack:
+                    _print_pgn(
+                        controller,
+                        white=pgn_white,
+                        black=pgn_black,
+                        result="*",
+                        termination="Stopped by user",
+                    )
+                return False
+            if command_name not in {"reset", "r", "resync", "position"}:
+                typer.echo("Unknown command.")
+                typer.echo(PLAY_COMMANDS)
+                return True
+            if latest_state is None:
+                typer.echo("No board position has been read yet.")
+                return True
+
+            typer.echo("")
+            typer.echo("Resyncing from current physical board position.")
+            typer.echo(latest_state.render())
+            remove_terminal_reader()
+            try:
+                controller.board = _resume_board_from_state(
+                    latest_state,
+                    white_to_move=command_turn(command),
+                )
+            finally:
+                install_terminal_reader()
+            synchronized = True
+            waiting_for_engine_move = False
+            previous = board_to_piece_map(controller.board)
+            await board.set_leds([])
+            if is_human_turn():
+                typer.echo(f"Ready for {human_color_name}'s move.")
+            else:
+                if await play_engine_move():
+                    waiting_for_engine_move = True
+            return True
+
+        async def next_board_state(states: AsyncIterator[BoardState]) -> BoardState:
+            return await states.__anext__()
+
+        async def watch_with_commands() -> AsyncIterator[BoardState]:
+            nonlocal latest_state
+            states = board.watch().__aiter__()
+            state_task = asyncio.create_task(next_board_state(states))
+            command_task = asyncio.create_task(command_queue.get())
+            try:
+                while True:
+                    done, _pending = await asyncio.wait(
+                        {state_task, command_task},
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    if command_task in done:
+                        if not await handle_command(command_task.result()):
+                            state_task.cancel()
+                            break
+                        command_task = asyncio.create_task(command_queue.get())
+                        continue
+
+                    state = state_task.result()
+                    latest_state = state
+                    yield state
+                    state_task = asyncio.create_task(next_board_state(states))
+            finally:
+                state_task.cancel()
+                command_task.cancel()
+
         try:
-            async for state in board.watch():
+            async for state in watch_with_commands():
                 current = state.normalized()
                 if current == previous:
                     continue
@@ -259,13 +395,28 @@ def play(
                     synchronized = current == expected
                     typer.echo(state.render())
                     if synchronized:
+                        install_terminal_reader()
                         if is_human_turn():
                             typer.echo(f"Ready for {human_color_name}'s move.")
                         else:
                             if await play_engine_move():
                                 waiting_for_engine_move = True
                     else:
-                        typer.echo("Set up the starting position to begin.")
+                        remove_terminal_reader()
+                        if typer.confirm("Start from this physical board position?", default=True):
+                            controller.board = _resume_board_from_state(state)
+                            synchronized = True
+                            expected = board_to_piece_map(controller.board)
+                            current = expected
+                            install_terminal_reader()
+                            if is_human_turn():
+                                typer.echo(f"Ready for {human_color_name}'s move.")
+                            else:
+                                if await play_engine_move():
+                                    waiting_for_engine_move = True
+                        else:
+                            typer.echo("Set up the starting position to begin.")
+                            install_terminal_reader()
                     previous = current
                     continue
 
@@ -324,6 +475,7 @@ def play(
                     break
                 previous = current
         finally:
+            remove_terminal_reader()
             maia.quit()
 
     try:

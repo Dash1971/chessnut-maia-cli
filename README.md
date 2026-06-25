@@ -58,6 +58,17 @@ human-as-Black. When playing as Black, Maia moves first, lights the move on the
 board, and waits for the player to make Maia's move physically before accepting
 Black's reply.
 
+If the physical board is already in a game position when `play` connects, the
+CLI offers to start from that position and asks whose move it is. The board
+sensors cannot recover move counters, en-passant state, or historical castling
+rights, so resumed games reconstruct the playable position from the visible
+pieces and infer castling rights from kings/rooks still on their home squares.
+
+During `play`, type `reset` and press Enter to resync the game from the current
+physical board position. You can also type `reset white` or `reset black` to
+resync without the turn prompt. This is useful if a physical move was made
+correctly but the running game state and board state stopped matching.
+
 For Maia2 book play, pass a Polyglot book with `--book-file`. The CLI forwards
 that path to the Maia wrapper's `BookFile` UCI option.
 
