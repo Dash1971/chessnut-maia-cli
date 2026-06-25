@@ -94,6 +94,64 @@ def infer_legal_move(board: "chess.Board", observed_after: BoardState) -> "chess
     raise ValueError(f"Observed board state is ambiguous: {moves}.")
 
 
+def infer_resilient_legal_move(board: "chess.Board", observed_after: BoardState) -> "chess.Move":
+    """Infer a move, tolerating unrelated sensor mismatches after resync.
+
+    The normal path requires the full physical board to match the exact legal
+    post-move position. If the board missed a prior notification, a later
+    position can include a clear human move plus stale differences elsewhere.
+    This fallback accepts only a unique legal move whose source emptied and
+    destination contains the moved piece.
+    """
+
+    import chess
+
+    try:
+        return infer_legal_move(board, observed_after)
+    except ValueError as exact_error:
+        target = observed_after.normalized()
+        plausible: list[tuple[int, chess.Move]] = []
+
+        for move in board.legal_moves:
+            piece = board.piece_at(move.from_square)
+            if piece is None:
+                continue
+
+            from_square = chess.square_name(move.from_square)
+            to_square = chess.square_name(move.to_square)
+            moved_symbol = piece.symbol()
+            if move.promotion is not None:
+                moved_symbol = chess.Piece(move.promotion, piece.color).symbol()
+
+            if target.get(to_square) != moved_symbol:
+                continue
+            if target.get(from_square) == piece.symbol():
+                continue
+
+            candidate = board.copy(stack=False)
+            candidate.push(move)
+            candidate_map = board_to_piece_map(candidate)
+            mismatches = _piece_map_mismatch_count(candidate_map, target)
+            plausible.append((mismatches, move))
+
+        if not plausible:
+            raise exact_error
+
+        plausible.sort(key=lambda item: item[0])
+        best_mismatch_count, best_move = plausible[0]
+        if len(plausible) == 1 or best_mismatch_count < plausible[1][0]:
+            return best_move
+
+        tied = [move.uci() for count, move in plausible if count == best_mismatch_count]
+        moves = ", ".join(tied)
+        raise ValueError(f"Observed board state is ambiguous after resync: {moves}.") from exact_error
+
+
+def _piece_map_mismatch_count(left: PieceMap, right: PieceMap) -> int:
+    squares = set(left) | set(right)
+    return sum(1 for square in squares if left.get(square) != right.get(square))
+
+
 @dataclass
 class GameController:
     """Coordinate board observations and engine moves."""

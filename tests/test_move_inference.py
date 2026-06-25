@@ -4,7 +4,12 @@ import chess
 import pytest
 
 from chessnut_maia_cli.board import BoardState
-from chessnut_maia_cli.game import board_from_piece_map, board_to_piece_map, infer_legal_move
+from chessnut_maia_cli.game import (
+    board_from_piece_map,
+    board_to_piece_map,
+    infer_legal_move,
+    infer_resilient_legal_move,
+)
 
 
 def observed_after(board: chess.Board, move_uci: str) -> BoardState:
@@ -61,3 +66,17 @@ def test_rejects_impossible_observation() -> None:
 
     with pytest.raises(ValueError, match="does not match any legal move"):
         infer_legal_move(board, impossible)
+
+
+def test_resilient_inference_accepts_unique_move_with_unrelated_mismatch() -> None:
+    board = chess.Board()
+    for move in ["e2e4", "e7e5", "d1h5", "b8c6", "f1c4", "g8f6"]:
+        board.push(chess.Move.from_uci(move))
+
+    observed = observed_after(board, "h5f7")
+    pieces = observed.normalized()
+    del pieces["a8"]
+
+    move = infer_resilient_legal_move(board, BoardState(pieces))
+
+    assert move == chess.Move.from_uci("h5f7")

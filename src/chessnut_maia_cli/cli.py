@@ -15,7 +15,13 @@ import typer
 
 from .board import BoardDevice, BoardState, ChessnutBoard
 from .engine import EngineConfig, MaiaEngine
-from .game import GameController, board_from_piece_map, board_to_piece_map, infer_legal_move
+from .game import (
+    GameController,
+    board_from_piece_map,
+    board_to_piece_map,
+    infer_legal_move,
+    infer_resilient_legal_move,
+)
 
 
 class EngineName(str, Enum):
@@ -407,7 +413,7 @@ def play(
                     continue
 
                 try:
-                    human_move = infer_legal_move(controller.board, state)
+                    human_move = infer_resilient_legal_move(controller.board, state)
                 except ValueError:
                     typer.echo(f"{human_color_name} move: pending")
                     typer.echo(state.render())
