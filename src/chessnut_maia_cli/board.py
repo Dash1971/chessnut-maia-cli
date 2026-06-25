@@ -23,6 +23,7 @@ READ_DATA_CHARACTERISTIC = "1B7E8262-2877-41C3-B46E-CF057C562023"
 BOARD_NOTIFICATION_HEADER = b"\x01\x24"
 BOARD_PAYLOAD_LENGTH = 32
 LED_COMMAND_PREFIX = b"\x0A\x08"
+BEEP_COMMAND_PREFIX = b"\x0B\x04"
 DEVICE_NAME_HINTS = ("Chessnut", "Smart Chess")
 
 PIECE_CODES = {
@@ -176,6 +177,16 @@ class ChessnutBoard:
             raise RuntimeError("Board is not connected.")
         await self._client.write_gatt_char(WRITE_CHARACTERISTIC, encode_led_command(squares))
 
+    async def beep(self, frequency_hz: int = 1000, duration_ms: int = 200) -> None:
+        """Sound the board buzzer if supported by the connected board."""
+
+        if self._client is None:
+            raise RuntimeError("Board is not connected.")
+        await self._client.write_gatt_char(
+            WRITE_CHARACTERISTIC,
+            encode_beep_command(frequency_hz=frequency_hz, duration_ms=duration_ms),
+        )
+
 
 def decode_board_notification(data: bytes) -> BoardState:
     """Decode a full Chessnut board notification into a board state."""
@@ -241,3 +252,21 @@ def encode_led_command(squares: Iterable[str]) -> bytes:
         bit = 7 - file_index
         rows[row_index] |= 1 << bit
     return LED_COMMAND_PREFIX + bytes(rows)
+
+
+def encode_beep_command(*, frequency_hz: int = 1000, duration_ms: int = 200) -> bytes:
+    """Encode a Chessnut buzzer command.
+
+    Command shape follows Chessnut's EasyLinkSDK ``cl_beep`` implementation:
+    ``0B 04 <freq_hi> <freq_lo> <duration_hi> <duration_lo>``.
+    """
+
+    if not 1 <= frequency_hz <= 0xFFFF:
+        raise ValueError(f"frequency_hz must be in 1..65535, got {frequency_hz}.")
+    if not 1 <= duration_ms <= 0xFFFF:
+        raise ValueError(f"duration_ms must be in 1..65535, got {duration_ms}.")
+    return (
+        BEEP_COMMAND_PREFIX
+        + frequency_hz.to_bytes(2, "big")
+        + duration_ms.to_bytes(2, "big")
+    )

@@ -132,7 +132,16 @@ def _terminal_bell() -> None:
     typer.echo("\a", nl=False)
 
 
-def _announce_check(controller: GameController) -> None:
+async def _beep(board: ChessnutBoard) -> None:
+    _terminal_bell()
+    try:
+        await board.beep()
+        await asyncio.sleep(0.2)
+    except Exception:
+        pass
+
+
+async def _announce_check(controller: GameController, board: ChessnutBoard) -> None:
     if not controller.board.is_check():
         return
 
@@ -140,7 +149,7 @@ def _announce_check(controller: GameController) -> None:
 
     checked_color = "White" if controller.board.turn == chess.WHITE else "Black"
     checkers = ", ".join(chess.square_name(square) for square in controller.board.checkers())
-    _terminal_bell()
+    await _beep(board)
     typer.echo(f"Check: {checked_color} king is in check from {checkers}.")
 
 
@@ -293,7 +302,7 @@ def play(
             maia_san = controller.board.san(maia_move)
             controller.board.push(maia_move)
             typer.echo(f"{engine_color_name}: {maia_move.uci()} ({maia_san})")
-            _announce_check(controller)
+            await _announce_check(controller, board)
             await board.set_leds([maia_move.uci()[:2], maia_move.uci()[2:4]])
             return True
 
@@ -399,7 +408,7 @@ def play(
                             expected = board_to_piece_map(controller.board)
                             current = expected
                             install_terminal_reader()
-                            _announce_check(controller)
+                            await _announce_check(controller, board)
                             if is_human_turn():
                                 typer.echo(f"Ready for {human_color_name}'s move.")
                             else:
@@ -443,7 +452,7 @@ def play(
                 try:
                     human_move = infer_resilient_legal_move(controller.board, state)
                 except ValueError:
-                    _terminal_bell()
+                    await _beep(board)
                     typer.echo(_pending_human_move_message(controller, human_color_name))
                     typer.echo(state.render())
                     previous = current
@@ -452,7 +461,7 @@ def play(
                 human_san = controller.board.san(human_move)
                 controller.board.push(human_move)
                 typer.echo(f"{human_color_name}: {human_move.uci()} ({human_san})")
-                _announce_check(controller)
+                await _announce_check(controller, board)
                 typer.echo(state.render())
 
                 if controller.board.is_game_over(claim_draw=True):

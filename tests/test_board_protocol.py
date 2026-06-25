@@ -6,6 +6,7 @@ from chessnut_maia_cli.board import (
     BoardState,
     decode_board_notification,
     decode_board_payload,
+    encode_beep_command,
     encode_led_command,
 )
 
@@ -77,3 +78,14 @@ def test_encode_led_command_for_move() -> None:
 def test_encode_led_command_rejects_bad_square() -> None:
     with pytest.raises(ValueError, match="Invalid square"):
         encode_led_command(["i9"])
+
+
+def test_encode_beep_command_defaults() -> None:
+    assert encode_beep_command() == bytes.fromhex("0B 04 03 E8 00 C8")
+
+
+def test_encode_beep_command_rejects_out_of_range_values() -> None:
+    with pytest.raises(ValueError, match="frequency_hz"):
+        encode_beep_command(frequency_hz=0)
+    with pytest.raises(ValueError, match="duration_ms"):
+        encode_beep_command(duration_ms=0)
