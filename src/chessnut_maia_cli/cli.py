@@ -128,6 +128,10 @@ def _pending_human_move_message(controller: GameController, color_name: str) -> 
     return f"{color_name} move: pending (in check from {checkers}; move must answer check)"
 
 
+def _terminal_bell() -> None:
+    typer.echo("\a", nl=False)
+
+
 def _announce_check(controller: GameController) -> None:
     if not controller.board.is_check():
         return
@@ -136,7 +140,7 @@ def _announce_check(controller: GameController) -> None:
 
     checked_color = "White" if controller.board.turn == chess.WHITE else "Black"
     checkers = ", ".join(chess.square_name(square) for square in controller.board.checkers())
-    typer.echo("\a", nl=False)
+    _terminal_bell()
     typer.echo(f"Check: {checked_color} king is in check from {checkers}.")
 
 
@@ -439,6 +443,7 @@ def play(
                 try:
                     human_move = infer_resilient_legal_move(controller.board, state)
                 except ValueError:
+                    _terminal_bell()
                     typer.echo(_pending_human_move_message(controller, human_color_name))
                     typer.echo(state.render())
                     previous = current

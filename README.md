@@ -71,9 +71,10 @@ a physical move was made correctly but the program seems stuck waiting for the
 board to report it.
 
 When either side gives check, the CLI emits a terminal bell and prints the king
-that is in check plus the checking square. The currently documented Chessnut
-protocol used by this project exposes board LEDs, not a board-speaker/buzzer
-command, so the audible alert comes from the terminal/Mac.
+that is in check plus the checking square. Illegal human moves also emit a
+terminal bell. The currently documented Chessnut protocol used by this project
+exposes board LEDs, not a board-speaker/buzzer command, so the audible alert
+comes from the terminal/Mac.
 
 For Maia2 book play, pass a Polyglot book with `--book-file`. The CLI forwards
 that path to the Maia wrapper's `BookFile` UCI option.
