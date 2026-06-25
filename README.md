@@ -64,10 +64,11 @@ sensors cannot recover move counters, en-passant state, or historical castling
 rights, so resumed games reconstruct the playable position from the visible
 pieces and infer castling rights from kings/rooks still on their home squares.
 
-During `play`, type `reset` and press Enter to resync the game from the current
-physical board position. You can also type `reset white` or `reset black` to
-resync without the turn prompt. This is useful if a physical move was made
-correctly but the running game state and board state stopped matching.
+During `play`, type `resync` and press Enter to refresh board sync without
+changing the internal game. This keeps the move list, side to move, and PGN
+intact while clearing LEDs and requesting a fresh board update. It is useful if
+a physical move was made correctly but the program seems stuck waiting for the
+board to report it.
 
 For Maia2 book play, pass a Polyglot book with `--book-file`. The CLI forwards
 that path to the Maia wrapper's `BookFile` UCI option.
