@@ -70,10 +70,11 @@ intact while clearing LEDs and requesting a fresh board update. It is useful if
 a physical move was made correctly but the program seems stuck waiting for the
 board to report it.
 
-When either side gives check, the CLI sounds the board buzzer, emits a terminal
-bell, and prints the king that is in check plus the checking square. Illegal
-human moves also trigger the same alert. The buzzer command follows Chessnut's
-EasyLinkSDK `cl_beep(1000, 200)` command framing.
+When either side gives check or checkmate, the CLI sounds the board buzzer and
+prints the king that is in check plus the checking square. Complete-looking
+illegal human move attempts also trigger the board buzzer. Transient lifted-piece
+positions should not beep. The buzzer command follows Chessnut's EasyLinkSDK
+`cl_beep(1000, 200)` command framing.
 
 For Maia2 book play, pass a Polyglot book with `--book-file`. The CLI forwards
 that path to the Maia wrapper's `BookFile` UCI option.

@@ -128,12 +128,7 @@ def _pending_human_move_message(controller: GameController, color_name: str) -> 
     return f"{color_name} move: pending (in check from {checkers}; move must answer check)"
 
 
-def _terminal_bell() -> None:
-    typer.echo("\a", nl=False)
-
-
 async def _beep(board: ChessnutBoard) -> None:
-    _terminal_bell()
     try:
         await board.beep()
         await asyncio.sleep(0.2)
@@ -150,7 +145,35 @@ async def _announce_check(controller: GameController, board: ChessnutBoard) -> N
     checked_color = "White" if controller.board.turn == chess.WHITE else "Black"
     checkers = ", ".join(chess.square_name(square) for square in controller.board.checkers())
     await _beep(board)
-    typer.echo(f"Check: {checked_color} king is in check from {checkers}.")
+    if controller.board.is_checkmate():
+        typer.echo(f"Checkmate: {checked_color} king is mated by {checkers}.")
+    else:
+        typer.echo(f"Check: {checked_color} king is in check from {checkers}.")
+
+
+def _looks_like_complete_move_attempt(controller: GameController, state: BoardState) -> bool:
+    import chess
+
+    moving_color = controller.board.turn
+    before = board_to_piece_map(controller.board)
+    after = state.normalized()
+
+    def is_moving_piece(piece: str | None) -> bool:
+        if piece is None:
+            return False
+        return piece.isupper() if moving_color == chess.WHITE else piece.islower()
+
+    removed_or_changed = [
+        square
+        for square, piece in before.items()
+        if is_moving_piece(piece) and after.get(square) != piece
+    ]
+    added_or_changed = [
+        square
+        for square, piece in after.items()
+        if is_moving_piece(piece) and before.get(square) != piece
+    ]
+    return bool(removed_or_changed and added_or_changed)
 
 
 @app.command()
@@ -452,7 +475,8 @@ def play(
                 try:
                     human_move = infer_resilient_legal_move(controller.board, state)
                 except ValueError:
-                    await _beep(board)
+                    if _looks_like_complete_move_attempt(controller, state):
+                        await _beep(board)
                     typer.echo(_pending_human_move_message(controller, human_color_name))
                     typer.echo(state.render())
                     previous = current
