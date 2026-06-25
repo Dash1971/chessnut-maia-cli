@@ -118,6 +118,16 @@ def _resume_board_from_state(state: BoardState) -> "chess.Board":
     return board_from_piece_map(state.normalized(), white_to_move=white_to_move)
 
 
+def _pending_human_move_message(controller: GameController, color_name: str) -> str:
+    if not controller.board.is_check():
+        return f"{color_name} move: pending"
+
+    import chess
+
+    checkers = ", ".join(chess.square_name(square) for square in controller.board.checkers())
+    return f"{color_name} move: pending (in check from {checkers}; move must answer check)"
+
+
 @app.command()
 def scan(timeout: float = typer.Option(5.0, help="Bluetooth scan timeout in seconds.")) -> None:
     """Scan for nearby Chessnut boards."""
@@ -415,7 +425,7 @@ def play(
                 try:
                     human_move = infer_resilient_legal_move(controller.board, state)
                 except ValueError:
-                    typer.echo(f"{human_color_name} move: pending")
+                    typer.echo(_pending_human_move_message(controller, human_color_name))
                     typer.echo(state.render())
                     previous = current
                     continue
