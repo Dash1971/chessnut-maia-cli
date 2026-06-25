@@ -128,6 +128,18 @@ def _pending_human_move_message(controller: GameController, color_name: str) -> 
     return f"{color_name} move: pending (in check from {checkers}; move must answer check)"
 
 
+def _announce_check(controller: GameController) -> None:
+    if not controller.board.is_check():
+        return
+
+    import chess
+
+    checked_color = "White" if controller.board.turn == chess.WHITE else "Black"
+    checkers = ", ".join(chess.square_name(square) for square in controller.board.checkers())
+    typer.echo("\a", nl=False)
+    typer.echo(f"Check: {checked_color} king is in check from {checkers}.")
+
+
 @app.command()
 def scan(timeout: float = typer.Option(5.0, help="Bluetooth scan timeout in seconds.")) -> None:
     """Scan for nearby Chessnut boards."""
@@ -277,6 +289,7 @@ def play(
             maia_san = controller.board.san(maia_move)
             controller.board.push(maia_move)
             typer.echo(f"{engine_color_name}: {maia_move.uci()} ({maia_san})")
+            _announce_check(controller)
             await board.set_leds([maia_move.uci()[:2], maia_move.uci()[2:4]])
             return True
 
@@ -382,6 +395,7 @@ def play(
                             expected = board_to_piece_map(controller.board)
                             current = expected
                             install_terminal_reader()
+                            _announce_check(controller)
                             if is_human_turn():
                                 typer.echo(f"Ready for {human_color_name}'s move.")
                             else:
@@ -433,6 +447,7 @@ def play(
                 human_san = controller.board.san(human_move)
                 controller.board.push(human_move)
                 typer.echo(f"{human_color_name}: {human_move.uci()} ({human_san})")
+                _announce_check(controller)
                 typer.echo(state.render())
 
                 if controller.board.is_game_over(claim_draw=True):
