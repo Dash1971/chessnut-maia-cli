@@ -3,7 +3,7 @@
 import chess
 import pytest
 
-from chessnut_maia_cli.cli import PlayerColor, _format_pgn, _parse_player_color
+from chessnut_maia_cli.cli import PlayerColor, _format_pgn, _parse_player_color, _save_pgn
 from chessnut_maia_cli.game import GameController
 
 
@@ -60,6 +60,27 @@ def test_format_pgn_describes_draw_termination() -> None:
 
     assert '[Result "1/2-1/2"]' in pgn
     assert '[Termination "Draw by stalemate"]' in pgn
+
+
+def test_save_pgn_uses_timestamp_and_player_names(tmp_path) -> None:
+    path = _save_pgn(
+        "1. e4 *",
+        white="Human Player",
+        black="maia2/1500",
+        directory=tmp_path,
+    )
+
+    assert path.parent == tmp_path
+    assert path.name.endswith("_Human-Player_maia2-1500.pgn")
+    assert path.read_text(encoding="utf-8") == "1. e4 *\n"
+
+
+def test_save_pgn_avoids_overwriting_existing_file(tmp_path) -> None:
+    first = _save_pgn("first", white="Human", black="maia2", directory=tmp_path)
+    second = _save_pgn("second", white="Human", black="maia2", directory=tmp_path)
+
+    assert first != second
+    assert second.stem.endswith("_2")
 
 
 def test_format_pgn_keeps_taken_back_moves_as_variation() -> None:

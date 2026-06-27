@@ -6,9 +6,10 @@ from __future__ import annotations
 
 import asyncio
 import random
+import shlex
 import sys
 from collections.abc import AsyncIterator
-from datetime import date
+from datetime import date, datetime
 from enum import Enum
 from pathlib import Path
 
@@ -44,6 +45,7 @@ app = typer.Typer(help="Play Maia engines on a Chessnut Go board.")
 PLAY_COMMANDS = (
     "Type resync to refresh board sync, or takeback/tb/undo to undo the last Maia/player turn."
 )
+DEFAULT_PGN_DIR = Path("~/Documents/EnCroissant")
 
 
 def _parse_player_color(value: str) -> PlayerColor:
@@ -167,19 +169,60 @@ def _print_pgn(
     result: str | None = None,
     termination: str | None = None,
 ) -> None:
+    pgn = _format_pgn(
+        controller,
+        white=white,
+        black=black,
+        white_elo=white_elo,
+        black_elo=black_elo,
+        result=result,
+        termination=termination,
+    )
     typer.echo("")
     typer.echo("PGN:")
-    typer.echo(
-        _format_pgn(
-            controller,
-            white=white,
-            black=black,
-            white_elo=white_elo,
-            black_elo=black_elo,
-            result=result,
-            termination=termination,
-        )
-    )
+    typer.echo(pgn)
+    try:
+        pgn_path = _save_pgn(pgn, white=white, black=black)
+    except OSError as exc:
+        typer.echo(f"Could not save PGN: {exc}")
+        return
+    typer.echo("")
+    typer.echo(f"PGN saved: {pgn_path}")
+    typer.echo(f"Open in En Croissant: open -a \"En Croissant\" {shlex.quote(str(pgn_path))}")
+
+
+def _save_pgn(
+    pgn: str,
+    *,
+    white: str,
+    black: str,
+    directory: Path = DEFAULT_PGN_DIR,
+) -> Path:
+    pgn_dir = directory.expanduser()
+    pgn_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    filename = f"{timestamp}_{_filename_token(white)}_{_filename_token(black)}.pgn"
+    path = _unique_path(pgn_dir / filename)
+    path.write_text(pgn + "\n", encoding="utf-8")
+    return path
+
+
+def _filename_token(value: str) -> str:
+    cleaned = "".join(char if char.isalnum() else "-" for char in value.strip())
+    cleaned = "-".join(part for part in cleaned.split("-") if part)
+    return cleaned or "unknown"
+
+
+def _unique_path(path: Path) -> Path:
+    if not path.exists():
+        return path
+    stem = path.stem
+    suffix = path.suffix
+    for index in range(2, 1000):
+        candidate = path.with_name(f"{stem}_{index}{suffix}")
+        if not candidate.exists():
+            return candidate
+    raise OSError(f"Could not find available filename for {path}")
 
 
 def _prompt_white_to_move() -> bool:

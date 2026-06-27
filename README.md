@@ -129,7 +129,24 @@ Maia's piece physically on the board, then continue.
 If you play Black, Maia moves first. The CLI lights Maia's first move; make that
 move physically, then play Black's reply.
 
-When the game ends or you stop with `Ctrl-C`, the CLI prints a PGN.
+When the game ends or you stop with `Ctrl-C`, the CLI prints a PGN and saves it
+under:
+
+```text
+~/Documents/EnCroissant/
+```
+
+Saved PGN filenames use:
+
+```text
+yyyymmdd_hhmm_whiteplayer_blackplayer.pgn
+```
+
+For example:
+
+```text
+20260627_1526_Human_maia2.pgn
+```
 
 PGN headers include the engine Elo when `--elo` is provided. The `Termination`
 header uses the final board outcome when available, such as `White won by

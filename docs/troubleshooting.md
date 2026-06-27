@@ -152,7 +152,13 @@ Here `d4 d5` is the game continuation. `e4 e5` is the taken-back line.
 
 ## Ctrl-C And PGN Output
 
-If you stop with `Ctrl-C`, the CLI prints the current PGN when at least one move
-has been played.
+If you stop with `Ctrl-C`, the CLI prints and saves the current PGN when at
+least one move has been played.
 
 If no PGN appears, the internal game had no moves yet.
+
+Saved PGNs go to:
+
+```text
+~/Documents/EnCroissant/
+```
