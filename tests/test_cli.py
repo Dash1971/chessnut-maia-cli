@@ -23,6 +23,43 @@ def test_format_pgn_supports_human_as_black() -> None:
     assert '[White "maia2"]' in pgn
     assert '[Black "Human"]' in pgn
     assert '[Termination "Interrupted by user"]' in pgn
+    assert '[Round "' not in pgn
+
+
+def test_format_pgn_includes_engine_elo() -> None:
+    controller = GameController()
+
+    pgn = _format_pgn(
+        controller,
+        white="Human",
+        black="maia2",
+        black_elo=1500,
+        result="*",
+    )
+
+    assert '[BlackElo "1500"]' in pgn
+    assert '[WhiteElo "' not in pgn
+
+
+def test_format_pgn_describes_checkmate_termination() -> None:
+    controller = GameController()
+    for move in ["f2f3", "e7e5", "g2g4", "d8h4"]:
+        controller.board.push(chess.Move.from_uci(move))
+
+    pgn = _format_pgn(controller, white="Human", black="maia2")
+
+    assert '[Result "0-1"]' in pgn
+    assert '[Termination "Black won by checkmate"]' in pgn
+
+
+def test_format_pgn_describes_draw_termination() -> None:
+    controller = GameController()
+    controller.board = chess.Board("7k/5K2/6Q1/8/8/8/8/8 b - - 0 1")
+
+    pgn = _format_pgn(controller, white="Human", black="maia2")
+
+    assert '[Result "1/2-1/2"]' in pgn
+    assert '[Termination "Draw by stalemate"]' in pgn
 
 
 def test_format_pgn_keeps_taken_back_moves_as_variation() -> None:

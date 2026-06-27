@@ -82,6 +82,8 @@ def _format_pgn(
     *,
     white: str,
     black: str,
+    white_elo: int | None = None,
+    black_elo: int | None = None,
     result: str | None = None,
     termination: str | None = None,
 ) -> str:
@@ -95,13 +97,41 @@ def _format_pgn(
     game.headers["Event"] = "Chessnut Maia CLI game"
     game.headers["Site"] = "Chessnut Go / local engine"
     game.headers["Date"] = date.today().strftime("%Y.%m.%d")
-    game.headers["Round"] = "-"
+    if "Round" in game.headers:
+        del game.headers["Round"]
     game.headers["White"] = white
     game.headers["Black"] = black
+    if white_elo is not None:
+        game.headers["WhiteElo"] = str(white_elo)
+    if black_elo is not None:
+        game.headers["BlackElo"] = str(black_elo)
     game.headers["Result"] = final_result
-    if termination is not None:
-        game.headers["Termination"] = termination
+    final_termination = termination or _termination_from_board(board)
+    if final_termination is not None:
+        game.headers["Termination"] = final_termination
     return str(game)
+
+
+def _termination_from_board(board: "chess.Board") -> str | None:
+    import chess
+
+    outcome = board.outcome(claim_draw=True)
+    if outcome is None:
+        return None
+
+    if outcome.termination == chess.Termination.CHECKMATE:
+        winner = "White" if outcome.winner == chess.WHITE else "Black"
+        return f"{winner} won by checkmate"
+
+    draw_terminations = {
+        chess.Termination.STALEMATE: "Draw by stalemate",
+        chess.Termination.INSUFFICIENT_MATERIAL: "Draw by insufficient material",
+        chess.Termination.SEVENTYFIVE_MOVES: "Draw by seventy-five-move rule",
+        chess.Termination.FIVEFOLD_REPETITION: "Draw by fivefold repetition",
+        chess.Termination.FIFTY_MOVES: "Draw by fifty-move rule",
+        chess.Termination.THREEFOLD_REPETITION: "Draw by repetition",
+    }
+    return draw_terminations.get(outcome.termination, f"Game ended by {outcome.termination.name}")
 
 
 def _pgn_game_from_controller(controller: GameController) -> "chess.pgn.Game":
@@ -132,6 +162,8 @@ def _print_pgn(
     *,
     white: str,
     black: str,
+    white_elo: int | None = None,
+    black_elo: int | None = None,
     result: str | None = None,
     termination: str | None = None,
 ) -> None:
@@ -142,6 +174,8 @@ def _print_pgn(
             controller,
             white=white,
             black=black,
+            white_elo=white_elo,
+            black_elo=black_elo,
             result=result,
             termination=termination,
         )
@@ -330,6 +364,8 @@ def play(
     engine_color_name = "Black" if human_is_white else "White"
     pgn_white = "Human" if human_is_white else config.name
     pgn_black = config.name if human_is_white else "Human"
+    pgn_white_elo = None if human_is_white else config.elo
+    pgn_black_elo = config.elo if human_is_white else None
 
     controller: GameController | None = None
 
@@ -356,13 +392,15 @@ def play(
         command_queue: asyncio.Queue[str] = asyncio.Queue()
         terminal_reader_active = False
 
-        async def finish_game(result: str, termination: str) -> None:
+        async def finish_game(result: str, termination: str | None = None) -> None:
             await board.set_leds([])
             typer.echo(f"Game over: {result}")
             _print_pgn(
                 controller,
                 white=pgn_white,
                 black=pgn_black,
+                white_elo=pgn_white_elo,
+                black_elo=pgn_black_elo,
                 result=result,
                 termination=termination,
             )
@@ -568,7 +606,7 @@ def play(
                         waiting_for_engine_move = False
                         if controller.board.is_game_over(claim_draw=True):
                             result = controller.board.result(claim_draw=True)
-                            await finish_game(result, "Game over")
+                            await finish_game(result)
                             break
                         if is_human_turn():
                             typer.echo(f"Ready for {human_color_name}'s move.")
@@ -608,7 +646,7 @@ def play(
 
                 if controller.board.is_game_over(claim_draw=True):
                     result = controller.board.result(claim_draw=True)
-                    await finish_game(result, "Game over")
+                    await finish_game(result)
                     previous = current
                     break
 
@@ -631,6 +669,8 @@ def play(
                 controller,
                 white=pgn_white,
                 black=pgn_black,
+                white_elo=pgn_white_elo,
+                black_elo=pgn_black_elo,
                 result="*",
                 termination="Interrupted by user",
             )

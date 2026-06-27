@@ -131,6 +131,11 @@ move physically, then play Black's reply.
 
 When the game ends or you stop with `Ctrl-C`, the CLI prints a PGN.
 
+PGN headers include the engine Elo when `--elo` is provided. The `Termination`
+header uses the final board outcome when available, such as `White won by
+checkmate`, `Black won by checkmate`, `Draw by stalemate`, or `Draw by
+repetition`.
+
 ## Board Sync
 
 Chessnut boards report the current piece placement. The CLI compares that full
