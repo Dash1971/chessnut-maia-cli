@@ -50,6 +50,18 @@ def board_from_piece_map(pieces: PieceMap, *, white_to_move: bool) -> "chess.Boa
     return board
 
 
+def is_resumable_piece_map(pieces: PieceMap) -> bool:
+    """Return whether a physical position is complete enough to offer resume."""
+
+    for white_to_move in (True, False):
+        try:
+            board_from_piece_map(pieces, white_to_move=white_to_move)
+        except ValueError:
+            continue
+        return True
+    return False
+
+
 def _looks_like_mis_set_starting_position(pieces: PieceMap) -> bool:
     """Catch all-pieces-present setup mistakes before resuming a poisoned game."""
 

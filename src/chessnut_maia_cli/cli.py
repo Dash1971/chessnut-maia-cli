@@ -23,6 +23,7 @@ from .game import (
     changed_squares,
     infer_legal_move,
     infer_resilient_legal_move,
+    is_resumable_piece_map,
 )
 
 
@@ -526,7 +527,13 @@ def play(
                                 waiting_for_engine_move = True
                     else:
                         remove_terminal_reader()
-                        if typer.confirm("Start from this physical board position?", default=True):
+                        if not is_resumable_piece_map(current):
+                            typer.echo("Set up the starting position to begin.")
+                            install_terminal_reader()
+                        elif typer.confirm(
+                            "Start from this physical board position?",
+                            default=True,
+                        ):
                             try:
                                 controller.board = _resume_board_from_state(state)
                             except ValueError as exc:

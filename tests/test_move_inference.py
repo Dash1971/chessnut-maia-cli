@@ -11,6 +11,7 @@ from chessnut_maia_cli.game import (
     changed_squares,
     infer_legal_move,
     infer_resilient_legal_move,
+    is_resumable_piece_map,
     takeback_last_turn,
 )
 
@@ -60,6 +61,30 @@ def test_rejects_invalid_physical_resume_position() -> None:
 
     with pytest.raises(ValueError, match="mis-set starting position"):
         board_from_piece_map(pieces, white_to_move=True)
+
+
+def test_setup_mistakes_are_not_offered_as_resumable_positions() -> None:
+    pieces = board_to_piece_map(chess.Board())
+    pieces["d1"] = "K"
+    pieces["e1"] = "Q"
+
+    assert not is_resumable_piece_map(pieces)
+
+
+def test_transient_incomplete_setup_is_not_resumable() -> None:
+    pieces = board_to_piece_map(chess.Board())
+    del pieces["d1"]
+    del pieces["e1"]
+
+    assert not is_resumable_piece_map(pieces)
+
+
+def test_game_position_can_still_be_offered_as_resumable() -> None:
+    board = chess.Board()
+    for move in ["e2e4", "e7e5", "g1f3"]:
+        board.push(chess.Move.from_uci(move))
+
+    assert is_resumable_piece_map(board_to_piece_map(board))
 
 
 def test_resumed_castled_position_has_no_castling_rights_for_castled_side() -> None:
