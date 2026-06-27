@@ -126,6 +126,17 @@ physical board and the reverted internal board.
 Restore those squares physically. Play resumes only when the full board matches
 the reverted position.
 
+## Resigning
+
+Type:
+
+```text
+resign
+```
+
+The CLI records the game as a win for Maia, prints the PGN, and saves it under
+`~/Documents/EnCroissant/`.
+
 ## BookFile Errors
 
 Make sure the path exists:

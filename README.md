@@ -116,6 +116,7 @@ During `play`, terminal commands are also available:
 
 - `resync` - clear LEDs and request a fresh board update without changing the game
 - `takeback`, `tb`, or `undo` - roll back the last player/Maia turn
+- `resign` - resign the game and print/save the PGN
 - `help`, `h`, or `?` - print the command reminder
 
 ## Playing a Game
@@ -151,7 +152,8 @@ For example:
 PGN headers include the engine Elo when `--elo` is provided. The `Termination`
 header uses the final board outcome when available, such as `White won by
 checkmate`, `Black won by checkmate`, `Draw by stalemate`, or `Draw by
-repetition`.
+repetition`. If you type `resign`, the PGN result is recorded as a win for Maia
+and the termination is `White resigned` or `Black resigned`.
 
 ## Board Sync
 

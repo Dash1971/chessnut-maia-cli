@@ -3,7 +3,14 @@
 import chess
 import pytest
 
-from chessnut_maia_cli.cli import PlayerColor, _format_pgn, _parse_player_color, _save_pgn
+from chessnut_maia_cli.cli import (
+    PLAY_COMMANDS,
+    PlayerColor,
+    _format_pgn,
+    _parse_player_color,
+    _resignation_result,
+    _save_pgn,
+)
 from chessnut_maia_cli.game import GameController
 
 
@@ -60,6 +67,15 @@ def test_format_pgn_describes_draw_termination() -> None:
 
     assert '[Result "1/2-1/2"]' in pgn
     assert '[Termination "Draw by stalemate"]' in pgn
+
+
+def test_resignation_result() -> None:
+    assert _resignation_result(human_is_white=True) == ("0-1", "White resigned")
+    assert _resignation_result(human_is_white=False) == ("1-0", "Black resigned")
+
+
+def test_play_command_help_mentions_resign() -> None:
+    assert "resign" in PLAY_COMMANDS
 
 
 def test_save_pgn_uses_timestamp_and_player_names(tmp_path) -> None:

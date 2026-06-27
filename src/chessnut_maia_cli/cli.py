@@ -43,7 +43,8 @@ app = typer.Typer(help="Play Maia engines on a Chessnut Go board.")
 
 
 PLAY_COMMANDS = (
-    "Type resync to refresh board sync, or takeback/tb/undo to undo the last Maia/player turn."
+    "Type resync to refresh board sync, takeback/tb/undo to undo the last "
+    "Maia/player turn, or resign to resign."
 )
 DEFAULT_PGN_DIR = Path("~/Documents/EnCroissant")
 
@@ -134,6 +135,12 @@ def _termination_from_board(board: "chess.Board") -> str | None:
         chess.Termination.THREEFOLD_REPETITION: "Draw by repetition",
     }
     return draw_terminations.get(outcome.termination, f"Game ended by {outcome.termination.name}")
+
+
+def _resignation_result(*, human_is_white: bool) -> tuple[str, str]:
+    if human_is_white:
+        return "0-1", "White resigned"
+    return "1-0", "Black resigned"
 
 
 def _pgn_game_from_controller(controller: GameController) -> "chess.pgn.Game":
@@ -492,6 +499,10 @@ def play(
             if command_name in {"", "help", "h", "?"}:
                 typer.echo(PLAY_COMMANDS)
                 return True
+            if command_name == "resign":
+                result, termination = _resignation_result(human_is_white=human_is_white)
+                await finish_game(result, termination)
+                return False
             if command_name in {"takeback", "tb", "undo"}:
                 if not synchronized:
                     typer.echo("Cannot take back until the physical board is synchronized.")
