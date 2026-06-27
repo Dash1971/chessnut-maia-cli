@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field
 
 from .board import BoardState, PieceMap
@@ -30,6 +31,9 @@ def board_from_piece_map(pieces: PieceMap, *, white_to_move: bool) -> "chess.Boa
 
     import chess
 
+    if _looks_like_mis_set_starting_position(pieces):
+        raise ValueError("Physical board looks like a mis-set starting position.")
+
     board = chess.Board(None)
     for square_name, symbol in pieces.items():
         square = chess.parse_square(square_name)
@@ -41,7 +45,23 @@ def board_from_piece_map(pieces: PieceMap, *, white_to_move: bool) -> "chess.Boa
     board.halfmove_clock = 0
     board.fullmove_number = 1
     board.clear_stack()
+    if not board.is_valid():
+        raise ValueError("Physical board position is not a valid chess position.")
     return board
+
+
+def _looks_like_mis_set_starting_position(pieces: PieceMap) -> bool:
+    """Catch all-pieces-present setup mistakes before resuming a poisoned game."""
+
+    import chess
+
+    starting = board_to_piece_map(chess.Board())
+    if pieces == starting:
+        return False
+    if Counter(pieces.values()) != Counter(starting.values()):
+        return False
+    pawn_squares = [f"{file}{rank}" for file in "abcdefgh" for rank in ("2", "7")]
+    return all(pieces.get(square) == starting[square] for square in pawn_squares)
 
 
 def _infer_castling_rights(board: "chess.Board") -> int:
@@ -152,11 +172,38 @@ def _piece_map_mismatch_count(left: PieceMap, right: PieceMap) -> int:
     return sum(1 for square in squares if left.get(square) != right.get(square))
 
 
+def changed_squares(left: PieceMap, right: PieceMap) -> list[str]:
+    """Return squares whose visible pieces differ between two physical positions."""
+
+    return sorted(
+        square for square in set(left) | set(right) if left.get(square) != right.get(square)
+    )
+
+
+def takeback_last_turn(board: "chess.Board") -> list["chess.Move"]:
+    """Pop the last player/engine turn, or the only available move."""
+
+    if not board.move_stack:
+        raise ValueError("No moves to take back.")
+
+    pop_count = min(2, len(board.move_stack))
+    return [board.pop() for _ in range(pop_count)]
+
+
+@dataclass
+class TakebackVariation:
+    """A sequence removed by takeback, anchored to a mainline ply."""
+
+    base_ply: int
+    moves: tuple["chess.Move", ...]
+
+
 @dataclass
 class GameController:
     """Coordinate board observations and engine moves."""
 
     board: "chess.Board" = field(default_factory=lambda: _new_board())
+    takeback_variations: list[TakebackVariation] = field(default_factory=list)
 
     def accept_human_position(self, observed_after: BoardState) -> "chess.Move":
         move = infer_legal_move(self.board, observed_after)
@@ -167,6 +214,16 @@ class GameController:
         if move not in self.board.legal_moves:
             raise ValueError(f"Engine returned illegal move: {move.uci()}")
         self.board.push(move)
+
+    def takeback_last_turn(self) -> list["chess.Move"]:
+        popped_moves = takeback_last_turn(self.board)
+        self.takeback_variations.append(
+            TakebackVariation(
+                base_ply=len(self.board.move_stack),
+                moves=tuple(reversed(popped_moves)),
+            )
+        )
+        return popped_moves
 
 
 def _new_board() -> "chess.Board":

@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import asyncio
+import random
 import sys
 from collections.abc import AsyncIterator
 from datetime import date
@@ -19,6 +20,7 @@ from .game import (
     GameController,
     board_from_piece_map,
     board_to_piece_map,
+    changed_squares,
     infer_legal_move,
     infer_resilient_legal_move,
 )
@@ -32,12 +34,31 @@ class EngineName(str, Enum):
 class PlayerColor(str, Enum):
     white = "white"
     black = "black"
+    random = "random"
 
 
 app = typer.Typer(help="Play Maia engines on a Chessnut Go board.")
 
 
-PLAY_COMMANDS = "Type resync and press Enter to refresh board sync without changing the game."
+PLAY_COMMANDS = (
+    "Type resync to refresh board sync, or takeback/tb/undo to undo the last Maia/player turn."
+)
+
+
+def _parse_player_color(value: str) -> PlayerColor:
+    normalized = value.strip().lower()
+    aliases = {
+        "w": PlayerColor.white,
+        "white": PlayerColor.white,
+        "b": PlayerColor.black,
+        "black": PlayerColor.black,
+        "r": PlayerColor.random,
+        "random": PlayerColor.random,
+    }
+    try:
+        return aliases[normalized]
+    except KeyError as exc:
+        raise typer.BadParameter("Choose white, black, random, w, b, or r.") from exc
 
 
 async def _resolve_board(address: str | None, scan_timeout: float = 5.0) -> BoardDevice:
@@ -69,7 +90,7 @@ def _format_pgn(
     final_result = result or (
         board.result(claim_draw=True) if board.is_game_over(claim_draw=True) else "*"
     )
-    game = chess.pgn.Game.from_board(board)
+    game = _pgn_game_from_controller(controller)
     game.headers["Event"] = "Chessnut Maia CLI game"
     game.headers["Site"] = "Chessnut Go / local engine"
     game.headers["Date"] = date.today().strftime("%Y.%m.%d")
@@ -80,6 +101,29 @@ def _format_pgn(
     if termination is not None:
         game.headers["Termination"] = termination
     return str(game)
+
+
+def _pgn_game_from_controller(controller: GameController) -> "chess.pgn.Game":
+    import chess.pgn
+
+    game = chess.pgn.Game.from_board(controller.board)
+    for variation in controller.takeback_variations:
+        base_node = _pgn_node_at_ply(game, variation.base_ply)
+        if base_node is None:
+            continue
+        node = base_node
+        for move in variation.moves:
+            node = node.add_variation(move)
+    return game
+
+
+def _pgn_node_at_ply(game: "chess.pgn.Game", ply: int) -> "chess.pgn.GameNode | None":
+    node = game
+    for _ in range(ply):
+        if not node.variations:
+            return None
+        node = node.variations[0]
+    return node
 
 
 def _print_pgn(
@@ -249,7 +293,10 @@ def watch(
 @app.command()
 def play(
     engine: EngineName = typer.Option(EngineName.maia2, help="Maia engine to play."),
-    color: PlayerColor = typer.Option(PlayerColor.white, help="Human player color."),
+    color: str = typer.Option(
+        "white",
+        help="Human player color: white, black, random, w, b, or r.",
+    ),
     elo: int | None = typer.Option(None, help="Optional Maia UCI Elo setting."),
     book_file: Path | None = typer.Option(None, help="Optional Polyglot opening book path."),
     human_time: bool = typer.Option(False, help="Enable the engine wrapper's HumanTime option."),
@@ -274,7 +321,10 @@ def play(
             config.book_file,
             config.human_time,
         )
-    human_is_white = color == PlayerColor.white
+    player_color = _parse_player_color(color)
+    if player_color == PlayerColor.random:
+        player_color = random.choice([PlayerColor.white, PlayerColor.black])
+    human_is_white = player_color == PlayerColor.white
     human_color_name = "White" if human_is_white else "Black"
     engine_color_name = "Black" if human_is_white else "White"
     pgn_white = "Human" if human_is_white else config.name
@@ -289,6 +339,7 @@ def play(
         controller = GameController()
         synchronized = False
         waiting_for_engine_move = False
+        takeback_restore_active = False
         previous: dict[str, str] | None = None
 
         typer.echo(f"Connected to {device.name} {device.address}. Press Ctrl-C to stop.")
@@ -354,10 +405,42 @@ def play(
                 terminal_reader_active = False
 
         async def handle_command(command: str) -> bool:
-            nonlocal previous, synchronized, waiting_for_engine_move
+            nonlocal previous, synchronized, waiting_for_engine_move, takeback_restore_active
             command_name = command.split()[0] if command else ""
             if command_name in {"", "help", "h", "?"}:
                 typer.echo(PLAY_COMMANDS)
+                return True
+            if command_name in {"takeback", "tb", "undo"}:
+                if not synchronized:
+                    typer.echo("Cannot take back until the physical board is synchronized.")
+                    return True
+                try:
+                    popped_moves = controller.takeback_last_turn()
+                except ValueError as exc:
+                    typer.echo(str(exc))
+                    return True
+
+                waiting_for_engine_move = False
+                takeback_restore_active = True
+                target = board_to_piece_map(controller.board)
+                current = previous or {}
+                restore_squares = changed_squares(current, target)
+                await board.set_leds(restore_squares)
+                moves = ", ".join(move.uci() for move in popped_moves)
+                typer.echo("")
+                typer.echo(f"Takeback: {moves}")
+                if restore_squares:
+                    typer.echo("Restore the lit squares to the previous position.")
+                else:
+                    typer.echo("Physical board already matches the takeback position.")
+                    takeback_restore_active = False
+                    if is_human_turn():
+                        typer.echo(f"Ready for {human_color_name}'s move.")
+                    else:
+                        if await play_engine_move():
+                            waiting_for_engine_move = True
+                if takeback_restore_active:
+                    await board.initialize()
                 return True
             if command_name != "resync":
                 typer.echo("Unknown command.")
@@ -368,6 +451,7 @@ def play(
             typer.echo("Resync requested. Keeping move list, side to move, and PGN intact.")
             previous = None
             waiting_for_engine_move = False
+            takeback_restore_active = False
             try:
                 await board.set_leds([])
                 await board.initialize()
@@ -413,6 +497,23 @@ def play(
                     typer.echo("")
 
                 expected = board_to_piece_map(controller.board)
+                if takeback_restore_active:
+                    typer.echo(state.render())
+                    if current == expected:
+                        await board.set_leds([])
+                        takeback_restore_active = False
+                        typer.echo("Takeback complete.")
+                        if is_human_turn():
+                            typer.echo(f"Ready for {human_color_name}'s move.")
+                        else:
+                            if await play_engine_move():
+                                waiting_for_engine_move = True
+                    else:
+                        await board.set_leds(changed_squares(current, expected))
+                        typer.echo("Takeback: restore the lit squares.")
+                    previous = current
+                    continue
+
                 if not synchronized:
                     synchronized = current == expected
                     typer.echo(state.render())
@@ -426,7 +527,17 @@ def play(
                     else:
                         remove_terminal_reader()
                         if typer.confirm("Start from this physical board position?", default=True):
-                            controller.board = _resume_board_from_state(state)
+                            try:
+                                controller.board = _resume_board_from_state(state)
+                            except ValueError as exc:
+                                typer.echo(f"Cannot start from this position: {exc}")
+                                typer.echo(
+                                    "Fix the physical board, then use resync "
+                                    "or wait for the next update."
+                                )
+                                install_terminal_reader()
+                                previous = current
+                                continue
                             synchronized = True
                             expected = board_to_piece_map(controller.board)
                             current = expected

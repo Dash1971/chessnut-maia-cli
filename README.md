@@ -21,6 +21,7 @@ chessnut-maia watch
 chessnut-maia play --engine maia2 --elo 1500 --book-file ~/chess/books/lichess_1600_all.bin --color white
 chessnut-maia play --engine maia2 --elo 1500 --book-file ~/chess/books/lichess_1600_all.bin --color black
 chessnut-maia play --engine maia3 --color white
+chessnut-maia play --engine maia3 --color random
 ```
 
 ## Expected local engine paths
@@ -56,19 +57,31 @@ Validated on a physical Chessnut Go:
 The first `play` loop is experimental, with support for human-as-White and
 human-as-Black. When playing as Black, Maia moves first, lights the move on the
 board, and waits for the player to make Maia's move physically before accepting
-Black's reply.
+Black's reply. `--color` accepts `white`, `black`, `random`, and the short
+aliases `w`, `b`, and `r`. Random chooses White or Black with equal probability
+when the command starts.
 
 If the physical board is already in a game position when `play` connects, the
 CLI offers to start from that position and asks whose move it is. The board
 sensors cannot recover move counters, en-passant state, or historical castling
 rights, so resumed games reconstruct the playable position from the visible
 pieces and infer castling rights from kings/rooks still on their home squares.
+All-pieces-present positions with unmoved pawns but a non-starting back rank are
+treated as setup mistakes instead of resumable games, because accepting that
+kind of position can poison the internal game state.
 
 During `play`, type `resync` and press Enter to refresh board sync without
 changing the internal game. This keeps the move list, side to move, and PGN
 intact while clearing LEDs and requesting a fresh board update. It is useful if
 a physical move was made correctly but the program seems stuck waiting for the
 board to report it.
+
+Type `takeback` and press Enter to undo the last player/Maia turn. The CLI pops
+Maia's last move plus the player's last move, lights the squares that must be
+restored, and waits until the physical board exactly matches the reverted
+internal board. `tb` and `undo` are accepted aliases. Taken-back moves are kept
+in the PGN as alternate lines; the moves played after the takeback become the
+main line continuation.
 
 When either side gives check or checkmate, the CLI sounds the board buzzer and
 prints the king that is in check plus the checking square. Complete-looking
