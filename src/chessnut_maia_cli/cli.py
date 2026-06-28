@@ -385,6 +385,14 @@ def play(
     elo: int | None = typer.Option(None, help="Optional Maia UCI Elo setting."),
     book_file: Path | None = typer.Option(None, help="Optional Polyglot opening book path."),
     human_time: bool = typer.Option(False, help="Enable the engine wrapper's HumanTime option."),
+    temperature: float | None = typer.Option(
+        None,
+        help="Optional Maia3 Temperature setting. Lower values reduce sampling randomness.",
+    ),
+    top_p: float | None = typer.Option(
+        None,
+        help="Optional Maia3 TopP setting. 1.0 disables nucleus filtering.",
+    ),
     movetime_ms: int = typer.Option(1000, help="Engine move time in milliseconds."),
     engine_path: Path | None = typer.Option(None, help="Custom UCI engine launcher path."),
     address: str | None = typer.Option(None, help="Board BLE address. If omitted, scan first."),
@@ -392,11 +400,23 @@ def play(
 ) -> None:
     """Play a game against Maia on a Chessnut board."""
 
+    if engine != EngineName.maia3 and (temperature is not None or top_p is not None):
+        typer.echo("--temperature and --top-p are only supported with --engine maia3.", err=True)
+        raise typer.Exit(2)
+    if temperature is not None and temperature < 0:
+        typer.echo("--temperature must be greater than or equal to 0.", err=True)
+        raise typer.Exit(2)
+    if top_p is not None and not 0 < top_p <= 1:
+        typer.echo("--top-p must be greater than 0 and less than or equal to 1.", err=True)
+        raise typer.Exit(2)
+
     config = EngineConfig.default(
         engine.value,
         elo=elo,
         book_file=book_file,
         human_time=human_time,
+        temperature=temperature,
+        top_p=top_p,
     )
     if engine_path is not None:
         config = EngineConfig(
@@ -405,6 +425,8 @@ def play(
             config.elo,
             config.book_file,
             config.human_time,
+            config.temperature,
+            config.top_p,
         )
     player_color = _parse_player_color(color)
     if player_color == PlayerColor.random:

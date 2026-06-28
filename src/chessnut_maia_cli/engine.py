@@ -21,6 +21,8 @@ class EngineConfig:
     elo: int | None = None
     book_file: Path | None = None
     human_time: bool | None = None
+    temperature: float | None = None
+    top_p: float | None = None
 
     @classmethod
     def default(
@@ -29,6 +31,8 @@ class EngineConfig:
         elo: int | None = None,
         book_file: Path | None = None,
         human_time: bool | None = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
     ) -> "EngineConfig":
         if name not in DEFAULT_ENGINE_PATHS:
             supported = ", ".join(sorted(DEFAULT_ENGINE_PATHS))
@@ -39,6 +43,8 @@ class EngineConfig:
             elo=elo,
             book_file=book_file.expanduser() if book_file is not None else None,
             human_time=human_time,
+            temperature=temperature,
+            top_p=top_p,
         )
 
 
@@ -56,6 +62,22 @@ class MaiaEngine:
     async def __aexit__(self, *_exc: object) -> None:
         self.quit()
 
+    def uci_options(self) -> dict[str, object]:
+        options: dict[str, object] = {}
+        if self.config.elo is not None:
+            option_name = "ELO" if self.config.name == "maia2" else "Elo"
+            options[option_name] = self.config.elo
+        if self.config.book_file is not None:
+            options["BookFile"] = str(self.config.book_file)
+        if self.config.human_time is not None:
+            options["HumanTime"] = self.config.human_time
+        if self.config.name == "maia3":
+            if self.config.temperature is not None:
+                options["Temperature"] = self.config.temperature
+            if self.config.top_p is not None:
+                options["TopP"] = self.config.top_p
+        return options
+
     def start(self) -> None:
         try:
             import chess.engine
@@ -66,14 +88,7 @@ class MaiaEngine:
             raise FileNotFoundError(f"Engine launcher not found: {self.config.path}")
 
         self._engine = chess.engine.SimpleEngine.popen_uci(str(self.config.path))
-        options = {}
-        if self.config.elo is not None:
-            option_name = "ELO" if self.config.name == "maia2" else "Elo"
-            options[option_name] = self.config.elo
-        if self.config.book_file is not None:
-            options["BookFile"] = str(self.config.book_file)
-        if self.config.human_time is not None:
-            options["HumanTime"] = self.config.human_time
+        options = self.uci_options()
         if options:
             self._engine.configure(options)
 

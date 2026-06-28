@@ -83,6 +83,19 @@ chessnut-maia play --engine maia2 --elo 1500 --color white
 chessnut-maia play --engine maia3 --elo 1500 --color white
 ```
 
+For Maia3, the wrapper also exposes sampling options. Defaults are
+`Temperature=1.0` and `TopP=1.0`. Lowering them can reduce low-probability
+outlier moves while still sampling from Maia3's human move policy:
+
+```bash
+chessnut-maia play \
+  --engine maia3 \
+  --elo 1600 \
+  --temperature 0.5 \
+  --top-p 0.9 \
+  --color white
+```
+
 ## Opening Books
 
 Opening books are optional. When supplied, the file must be a Polyglot `.bin`

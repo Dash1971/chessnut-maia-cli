@@ -110,6 +110,8 @@ Useful `play` options:
 - `--engine-path /path/to/engine-launcher.sh`
 - `--movetime-ms 1000`
 - `--human-time / --no-human-time`
+- `--temperature 0.5` (Maia3 only)
+- `--top-p 0.9` (Maia3 only)
 - `--address <BLE address>`
 
 During `play`, terminal commands are also available:
@@ -118,6 +120,27 @@ During `play`, terminal commands are also available:
 - `takeback`, `tb`, or `undo` - roll back the last player/Maia turn
 - `resign` - resign the game and print/save the PGN
 - `help`, `h`, or `?` - print the command reminder
+
+## Maia3 Sampling
+
+Maia3 samples from a move policy rather than searching for a single best move.
+The CLI can pass through the wrapper's Maia3-only sampling controls:
+
+- `--temperature`: lower values reduce randomness; `0` chooses the highest-logit
+  legal move.
+- `--top-p`: nucleus sampling cutoff; `1.0` disables filtering.
+
+The wrapper defaults are `Temperature=1.0` and `TopP=1.0`. To try a narrower
+move distribution while keeping human-like Maia3 play:
+
+```bash
+chessnut-maia play \
+  --engine maia3 \
+  --elo 1600 \
+  --temperature 0.5 \
+  --top-p 0.9 \
+  --color random
+```
 
 ## Playing a Game
 
