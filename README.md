@@ -261,6 +261,28 @@ Common checks:
 
 More detail: [docs/troubleshooting.md](docs/troubleshooting.md).
 
+## Future Plans
+
+A future version may add a lightweight Python launcher GUI for macOS and Linux.
+The launcher would keep this CLI as the game engine and provide a small
+cross-platform control panel for starting games without typing long commands.
+
+Planned launcher scope:
+
+- choose Maia2 or Maia3
+- set Elo, player color, opening book, and engine path
+- expose Maia3 sampling options such as temperature and top-p
+- toggle human-like timing
+- preview the generated `chessnut-maia play` command
+- start the CLI as a subprocess and show live status/output
+- optionally send supported runtime commands such as `takeback`, `resync`,
+  `resign`, and `quit`
+
+The intended first milestone is a launcher and live log, not a separate digital
+board UI. The Chessnut board remains the physical interface, and the existing
+CLI remains responsible for Bluetooth, Maia, game state, LEDs, alerts, and PGN
+output.
+
 ## Development
 
 Install with dev dependencies:
@@ -301,9 +323,8 @@ ruff check .
 - The board cannot report move history, clocks, en-passant rights, or historical
   castling rights. Resumed games reconstruct the best playable state from
   visible pieces.
-- The CLI does not yet save PGNs to disk automatically.
-- En Croissant one-click import is not implemented. A future version may save a
-  `.pgn` file and print an `open -a "En Croissant" /path/game.pgn` command.
+- En Croissant one-click import is not implemented yet. PGNs are saved to disk,
+  but opening them in En Croissant is still a manual step.
 
 ## Attribution
 
