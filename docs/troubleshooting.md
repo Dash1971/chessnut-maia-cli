@@ -74,6 +74,22 @@ readyok
 
 If not, fix the Maia install before using the Chessnut CLI.
 
+## The Engine Times Out Mid-Game
+
+If Maia starts normally but takes too long on a particular position, the CLI now
+prints and saves the PGN with `Termination "Engine timed out"` instead of
+crashing with a traceback.
+
+The move-selection time and the response timeout are separate:
+
+```bash
+chessnut-maia play --movetime-ms 1000 --engine-timeout-s 45
+```
+
+Keep `--movetime-ms` at the playing strength/speed you want. Increase
+`--engine-timeout-s` when the local Maia wrapper sometimes needs extra wall-clock
+time to return from unusual positions.
+
 ## Maia Move: Pending
 
 `Maia move: pending` means the internal game contains Maia's move, but the

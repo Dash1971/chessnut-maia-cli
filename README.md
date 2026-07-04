@@ -109,6 +109,7 @@ Useful `play` options:
 - `--book-file /path/to/book.bin`
 - `--engine-path /path/to/engine-launcher.sh`
 - `--movetime-ms 1000`
+- `--engine-timeout-s 30`
 - `--human-time / --no-human-time`
 - `--temperature 0.5` (Maia3 only)
 - `--top-p 0.9` (Maia3 only)
@@ -177,6 +178,11 @@ header uses the final board outcome when available, such as `White won by
 checkmate`, `Black won by checkmate`, `Draw by stalemate`, or `Draw by
 repetition`. If you type `resign`, the PGN result is recorded as a win for Maia
 and the termination is `White resigned` or `Black resigned`.
+
+If Maia does not answer a move request before `--engine-timeout-s`, the CLI ends
+the game cleanly, prints and saves the PGN, and records `Engine timed out`
+instead of crashing with a Python traceback. Increase this timeout if your local
+engine occasionally needs longer in unusual late endgames.
 
 ## Board Sync
 

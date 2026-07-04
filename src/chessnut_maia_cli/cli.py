@@ -16,7 +16,7 @@ from pathlib import Path
 import typer
 
 from .board import BoardDevice, BoardState, ChessnutBoard
-from .engine import EngineConfig, MaiaEngine
+from .engine import EngineConfig, MaiaEngine, MaiaEngineTimeoutError
 from .game import (
     GameController,
     board_from_piece_map,
@@ -394,6 +394,10 @@ def play(
         help="Optional Maia3 TopP setting. 1.0 disables nucleus filtering.",
     ),
     movetime_ms: int = typer.Option(1000, help="Engine move time in milliseconds."),
+    engine_timeout_s: float = typer.Option(
+        30.0,
+        help="Seconds to wait for Maia to answer before ending cleanly with a PGN.",
+    ),
     engine_path: Path | None = typer.Option(None, help="Custom UCI engine launcher path."),
     address: str | None = typer.Option(None, help="Board BLE address. If omitted, scan first."),
     scan_timeout: float = typer.Option(5.0, help="Bluetooth scan timeout in seconds."),
@@ -409,6 +413,9 @@ def play(
     if top_p is not None and not 0 < top_p <= 1:
         typer.echo("--top-p must be greater than 0 and less than or equal to 1.", err=True)
         raise typer.Exit(2)
+    if engine_timeout_s <= 0:
+        typer.echo("--engine-timeout-s must be greater than 0.", err=True)
+        raise typer.Exit(2)
 
     config = EngineConfig.default(
         engine.value,
@@ -417,6 +424,7 @@ def play(
         human_time=human_time,
         temperature=temperature,
         top_p=top_p,
+        timeout_s=engine_timeout_s,
     )
     if engine_path is not None:
         config = EngineConfig(
@@ -427,6 +435,7 @@ def play(
             config.human_time,
             config.temperature,
             config.top_p,
+            config.timeout_s,
         )
     player_color = _parse_player_color(color)
     if player_color == PlayerColor.random:
@@ -478,7 +487,16 @@ def play(
             )
 
         async def play_engine_move() -> bool:
-            maia_move = maia.play(controller.board, movetime_ms=movetime_ms)
+            try:
+                maia_move = maia.play(controller.board, movetime_ms=movetime_ms)
+            except MaiaEngineTimeoutError as exc:
+                typer.echo(str(exc))
+                result = controller.board.result(claim_draw=True)
+                if result == "*":
+                    await finish_game(result, "Engine timed out")
+                else:
+                    await finish_game(result)
+                return False
             if maia_move is None or maia_move.uci() == "0000":
                 result = controller.board.result(claim_draw=True)
                 await finish_game(result, "No legal engine move")

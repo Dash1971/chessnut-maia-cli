@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -23,6 +24,7 @@ class EngineConfig:
     human_time: bool | None = None
     temperature: float | None = None
     top_p: float | None = None
+    timeout_s: float = 30.0
 
     @classmethod
     def default(
@@ -33,6 +35,7 @@ class EngineConfig:
         human_time: bool | None = None,
         temperature: float | None = None,
         top_p: float | None = None,
+        timeout_s: float = 30.0,
     ) -> "EngineConfig":
         if name not in DEFAULT_ENGINE_PATHS:
             supported = ", ".join(sorted(DEFAULT_ENGINE_PATHS))
@@ -45,7 +48,12 @@ class EngineConfig:
             human_time=human_time,
             temperature=temperature,
             top_p=top_p,
+            timeout_s=timeout_s,
         )
+
+
+class MaiaEngineTimeoutError(RuntimeError):
+    """Raised when Maia does not answer a UCI play command before timeout."""
 
 
 class MaiaEngine:
@@ -87,7 +95,10 @@ class MaiaEngine:
         if not self.config.path.exists():
             raise FileNotFoundError(f"Engine launcher not found: {self.config.path}")
 
-        self._engine = chess.engine.SimpleEngine.popen_uci(str(self.config.path))
+        self._engine = chess.engine.SimpleEngine.popen_uci(
+            str(self.config.path),
+            timeout=self.config.timeout_s,
+        )
         options = self.uci_options()
         if options:
             self._engine.configure(options)
@@ -98,7 +109,12 @@ class MaiaEngine:
 
         import chess.engine
 
-        result = self._engine.play(board, chess.engine.Limit(time=movetime_ms / 1000))
+        try:
+            result = self._engine.play(board, chess.engine.Limit(time=movetime_ms / 1000))
+        except FutureTimeoutError as exc:
+            raise MaiaEngineTimeoutError(
+                f"Maia did not return a move within {self.config.timeout_s:g} seconds."
+            ) from exc
         return result.move
 
     def quit(self) -> None:
