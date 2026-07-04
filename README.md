@@ -109,7 +109,7 @@ Useful `play` options:
 - `--book-file /path/to/book.bin`
 - `--engine-path /path/to/engine-launcher.sh`
 - `--movetime-ms 1000`
-- `--engine-timeout-s 30`
+- `--engine-timeout-s 30` (default UCI response timeout)
 - `--human-time / --no-human-time`
 - `--temperature 0.5` (Maia3 only)
 - `--top-p 0.9` (Maia3 only)
@@ -179,10 +179,19 @@ checkmate`, `Black won by checkmate`, `Draw by stalemate`, or `Draw by
 repetition`. If you type `resign`, the PGN result is recorded as a win for Maia
 and the termination is `White resigned` or `Black resigned`.
 
-If Maia does not answer a move request before `--engine-timeout-s`, the CLI ends
-the game cleanly, prints and saves the PGN, and records `Engine timed out`
-instead of crashing with a Python traceback. Increase this timeout if your local
-engine occasionally needs longer in unusual late endgames.
+`--movetime-ms` controls how long Maia is asked to think. `--engine-timeout-s`
+controls how long the CLI waits for the local UCI process to answer before
+giving up. The default engine response timeout is 30 seconds, so with
+`--movetime-ms 1000` the practical wall-clock wait is about 31 seconds.
+
+If Maia still does not answer before that timeout, the CLI ends the game
+cleanly, prints and saves the PGN, and records `Engine timed out` instead of
+crashing with a Python traceback. Increase this timeout if your local engine
+occasionally needs longer in unusual late endgames:
+
+```bash
+chessnut-maia play --movetime-ms 1000 --engine-timeout-s 60
+```
 
 ## Board Sync
 
