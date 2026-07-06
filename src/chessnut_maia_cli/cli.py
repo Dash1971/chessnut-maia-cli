@@ -265,6 +265,17 @@ async def _beep(board: ChessnutBoard) -> None:
         pass
 
 
+async def _print_battery_status(board: ChessnutBoard) -> None:
+    try:
+        battery = await board.read_battery()
+    except Exception as exc:
+        typer.echo(f"Board battery: unavailable ({exc})")
+        return
+
+    charging = " charging" if battery.charging else ""
+    typer.echo(f"Board battery: {battery.percent}%{charging}")
+
+
 async def _announce_check(controller: GameController, board: ChessnutBoard) -> None:
     if not controller.board.is_check():
         return
@@ -461,6 +472,7 @@ def play(
         previous: dict[str, str] | None = None
 
         typer.echo(f"Connected to {device.name} {device.address}. Press Ctrl-C to stop.")
+        await _print_battery_status(board)
         typer.echo(f"Engine: {config.name} at {config.path}")
         if config.book_file is not None:
             typer.echo(f"Book: {config.book_file}")

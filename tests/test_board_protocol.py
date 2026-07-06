@@ -4,6 +4,7 @@ import pytest
 
 from chessnut_maia_cli.board import (
     BoardState,
+    decode_battery_response,
     decode_board_notification,
     decode_board_payload,
     encode_beep_command,
@@ -89,3 +90,24 @@ def test_encode_beep_command_rejects_out_of_range_values() -> None:
         encode_beep_command(frequency_hz=0)
     with pytest.raises(ValueError, match="duration_ms"):
         encode_beep_command(duration_ms=0)
+
+
+def test_decode_battery_response() -> None:
+    battery = decode_battery_response(bytes.fromhex("2A 02 43 00"))
+
+    assert battery.percent == 67
+    assert battery.charging is False
+
+
+def test_decode_charging_battery_response() -> None:
+    battery = decode_battery_response(bytes.fromhex("2A 02 C3 00"))
+
+    assert battery.percent == 67
+    assert battery.charging is True
+
+
+def test_decode_battery_response_rejects_bad_packets() -> None:
+    with pytest.raises(ValueError, match="battery response"):
+        decode_battery_response(bytes.fromhex("23 01 00"))
+    with pytest.raises(ValueError, match="percentage"):
+        decode_battery_response(bytes.fromhex("2A 02 7F 00"))

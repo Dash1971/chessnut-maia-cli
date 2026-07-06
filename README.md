@@ -147,6 +147,11 @@ chessnut-maia play \
 
 Set up the board in the normal starting position before launching `play`.
 
+At startup, `play` queries the board battery and prints an estimated level, for
+example `Board battery: 67%` or `Board battery: 67% charging`. If the board does
+not answer the battery query, the game continues and reports the battery as
+unavailable.
+
 If you play White, the CLI waits for your first physical move. After you move,
 Maia replies in the terminal and lights the source and destination squares. Move
 Maia's piece physically on the board, then continue.

@@ -24,6 +24,8 @@ BOARD_NOTIFICATION_HEADER = b"\x01\x24"
 BOARD_PAYLOAD_LENGTH = 32
 LED_COMMAND_PREFIX = b"\x0A\x08"
 BEEP_COMMAND_PREFIX = b"\x0B\x04"
+BATTERY_COMMAND = b"\x29\x01\x00"
+BATTERY_RESPONSE_HEADER = b"\x2A\x02"
 DEVICE_NAME_HINTS = ("Chessnut", "Smart Chess")
 
 PIECE_CODES = {
@@ -73,6 +75,12 @@ class BoardDevice:
     name: str
     address: str
     backend_device: object | None = None
+
+
+@dataclass(frozen=True)
+class BoardBattery:
+    percent: int
+    charging: bool
 
 
 class ChessnutBoard:
@@ -144,6 +152,38 @@ class ChessnutBoard:
             if self._client is not None:
                 await self._client.stop_notify(READ_DATA_CHARACTERISTIC)
             await self.disconnect()
+
+    async def read_battery(self, timeout: float = 5.0) -> BoardBattery:
+        """Connect, query, and return the board's estimated battery state."""
+
+        await self.connect()
+        try:
+            return await self.query_battery(timeout=timeout)
+        finally:
+            await self.disconnect()
+
+    async def query_battery(self, timeout: float = 5.0) -> BoardBattery:
+        """Query battery state on an already connected board."""
+
+        if self._client is None:
+            raise RuntimeError("Board is not connected.")
+
+        queue: asyncio.Queue[BoardBattery] = asyncio.Queue(maxsize=1)
+
+        def notification_handler(_characteristic: object, data: bytearray) -> None:
+            try:
+                battery = decode_battery_response(bytes(data))
+            except ValueError:
+                return
+            if queue.empty():
+                queue.put_nowait(battery)
+
+        await self._client.start_notify(READ_CONFIRMATION_CHARACTERISTIC, notification_handler)
+        try:
+            await self._client.write_gatt_char(WRITE_CHARACTERISTIC, BATTERY_COMMAND)
+            return await asyncio.wait_for(queue.get(), timeout=timeout)
+        finally:
+            await self._client.stop_notify(READ_CONFIRMATION_CHARACTERISTIC)
 
     async def watch(self) -> AsyncIterator[BoardState]:
         """Keep the board connected and yield each decoded board state."""
@@ -231,6 +271,23 @@ def decode_board_payload(payload: bytes) -> BoardState:
                 if piece != ".":
                     pieces[f"{file_name}{rank}"] = piece
     return BoardState(pieces)
+
+
+def decode_battery_response(data: bytes) -> BoardBattery:
+    """Decode a Chessnut battery notification.
+
+    Official Chessnut BLE docs describe response shape as
+    ``2A 02 <batteryLevel> <reserved>``. Bit 7 reports charging state; bits
+    0-6 report an estimated battery percentage.
+    """
+
+    if len(data) < 4 or data[:2] != BATTERY_RESPONSE_HEADER:
+        raise ValueError("Expected Chessnut battery response.")
+    raw_level = data[2]
+    percent = raw_level & 0x7F
+    if percent > 100:
+        raise ValueError(f"Invalid Chessnut battery percentage: {percent}.")
+    return BoardBattery(percent=percent, charging=bool(raw_level & 0x80))
 
 
 def encode_led_command(squares: Iterable[str]) -> bytes:
