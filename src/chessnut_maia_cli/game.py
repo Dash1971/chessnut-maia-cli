@@ -6,8 +6,12 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from .board import BoardState, PieceMap
+
+if TYPE_CHECKING:
+    import chess
 
 
 def board_to_piece_map(board: "chess.Board") -> PieceMap:

@@ -1,9 +1,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+import asyncio
+
 import pytest
 
 from chessnut_maia_cli.board import (
+    BoardDevice,
     BoardState,
+    ChessnutBoard,
     decode_battery_response,
     decode_board_notification,
     decode_board_payload,
@@ -111,3 +115,35 @@ def test_decode_battery_response_rejects_bad_packets() -> None:
         decode_battery_response(bytes.fromhex("23 01 00"))
     with pytest.raises(ValueError, match="percentage"):
         decode_battery_response(bytes.fromhex("2A 02 7F 00"))
+
+
+def test_watch_suppresses_stop_notify_failure_during_cleanup(monkeypatch) -> None:
+    class HalfDisconnectedClient:
+        async def start_notify(self, *_args) -> None:
+            return None
+
+        async def write_gatt_char(self, *_args) -> None:
+            return None
+
+        async def stop_notify(self, *_args) -> None:
+            raise RuntimeError("Service Discovery has not been performed yet")
+
+        async def disconnect(self) -> None:
+            return None
+
+    async def run_watch_cleanup() -> None:
+        board = ChessnutBoard(BoardDevice(name="Chessnut", address="test"))
+
+        async def fake_connect() -> None:
+            board._client = HalfDisconnectedClient()
+
+        monkeypatch.setattr(board, "connect", fake_connect)
+        states = board.watch().__aiter__()
+        task = asyncio.create_task(states.__anext__())
+        await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert board._client is None
+
+    asyncio.run(run_watch_cleanup())

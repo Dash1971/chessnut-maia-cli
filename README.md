@@ -198,6 +198,20 @@ occasionally needs longer in unusual late endgames:
 chessnut-maia play --movetime-ms 1000 --engine-timeout-s 60
 ```
 
+If an unexpected board, Bluetooth, or runtime error escapes after moves have
+been recorded, the CLI now prints the partial PGN before exiting, even if the
+normal save path cannot complete.
+
+If the board connection drops while `play` is running, the CLI keeps the current
+game and PGN in memory and prompts:
+
+```text
+Press r to rescan/reconnect to board, or q to quit
+```
+
+Choose `r` after the board is powered back on and physically set to the current
+position. Choose `q` to end the session and print/save the partial PGN.
+
 ## Board Sync
 
 Chessnut boards report the current piece placement. The CLI compares that full

@@ -8,6 +8,8 @@ from chessnut_maia_cli.cli import (
     PlayerColor,
     _format_pgn,
     _parse_player_color,
+    _print_crash_pgn,
+    _prompt_reconnect_to_board,
     _resignation_result,
     _save_pgn,
 )
@@ -112,6 +114,46 @@ def test_format_pgn_keeps_taken_back_moves_as_variation() -> None:
     assert "1. d4" in pgn
     assert "1... d5" in pgn
     assert "( 1. e4 e5 )" in pgn
+
+
+def test_print_crash_pgn_outputs_partial_game(capsys) -> None:
+    controller = GameController()
+    controller.board.push(chess.Move.from_uci("d2d4"))
+    controller.board.push(chess.Move.from_uci("e7e5"))
+
+    _print_crash_pgn(
+        controller,
+        white="Human",
+        black="maia3",
+        black_elo=1600,
+        error=RuntimeError("board disconnected"),
+    )
+
+    output = capsys.readouterr().out
+    assert "Unexpected error: board disconnected" in output
+    assert "Printing partial PGN before exiting." in output
+    assert '[Termination "Aborted after error: RuntimeError"]' in output
+    assert "1. d4 e5 *" in output
+
+
+def test_prompt_reconnect_to_board_accepts_reconnect(monkeypatch) -> None:
+    monkeypatch.setattr("typer.prompt", lambda _message: "r")
+
+    assert _prompt_reconnect_to_board(RuntimeError("lost")) is True
+
+
+def test_prompt_reconnect_to_board_accepts_quit(monkeypatch) -> None:
+    monkeypatch.setattr("typer.prompt", lambda _message: "q")
+
+    assert _prompt_reconnect_to_board(RuntimeError("lost")) is False
+
+
+def test_prompt_reconnect_to_board_reprompts_invalid_choice(monkeypatch, capsys) -> None:
+    choices = iter(["x", "reconnect"])
+    monkeypatch.setattr("typer.prompt", lambda _message: next(choices))
+
+    assert _prompt_reconnect_to_board(RuntimeError("lost")) is True
+    assert "Please enter r to reconnect or q to quit." in capsys.readouterr().out
 
 
 @pytest.mark.parametrize(

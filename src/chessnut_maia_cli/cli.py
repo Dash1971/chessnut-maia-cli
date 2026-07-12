@@ -9,9 +9,11 @@ import random
 import shlex
 import sys
 from collections.abc import AsyncIterator
+from contextlib import suppress
 from datetime import date, datetime
 from enum import Enum
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
 
@@ -26,6 +28,10 @@ from .game import (
     infer_resilient_legal_move,
     is_resumable_piece_map,
 )
+
+if TYPE_CHECKING:
+    import chess
+    import chess.pgn
 
 
 class EngineName(str, Enum):
@@ -90,8 +96,6 @@ def _format_pgn(
     result: str | None = None,
     termination: str | None = None,
 ) -> str:
-    import chess.pgn
-
     board = controller.board
     final_result = result or (
         board.result(claim_draw=True) if board.is_game_over(claim_draw=True) else "*"
@@ -198,6 +202,34 @@ def _print_pgn(
     typer.echo(f"Open in En Croissant: open -a \"En Croissant\" {shlex.quote(str(pgn_path))}")
 
 
+def _print_crash_pgn(
+    controller: GameController | None,
+    *,
+    white: str,
+    black: str,
+    white_elo: int | None = None,
+    black_elo: int | None = None,
+    error: BaseException,
+) -> None:
+    """Print the recorded game before an unexpected crash escapes the CLI."""
+
+    if controller is None or not controller.board.move_stack:
+        return
+
+    typer.echo("")
+    typer.echo(f"Unexpected error: {error}")
+    typer.echo("Printing partial PGN before exiting.")
+    _print_pgn(
+        controller,
+        white=white,
+        black=black,
+        white_elo=white_elo,
+        black_elo=black_elo,
+        result="*",
+        termination=f"Aborted after error: {type(error).__name__}",
+    )
+
+
 def _save_pgn(
     pgn: str,
     *,
@@ -255,6 +287,18 @@ def _pending_human_move_message(controller: GameController, color_name: str) -> 
 
     checkers = ", ".join(chess.square_name(square) for square in controller.board.checkers())
     return f"{color_name} move: pending (in check from {checkers}; move must answer check)"
+
+
+def _prompt_reconnect_to_board(error: BaseException) -> bool:
+    typer.echo("")
+    typer.echo(f"Board connection lost: {error}")
+    while True:
+        choice = typer.prompt("Press r to rescan/reconnect to board, or q to quit").strip().lower()
+        if choice in {"r", "rescan", "reconnect"}:
+            return True
+        if choice in {"q", "quit"}:
+            return False
+        typer.echo("Please enter r to reconnect or q to quit.")
 
 
 async def _beep(board: ChessnutBoard) -> None:
@@ -600,7 +644,7 @@ def play(
             try:
                 await board.set_leds([])
                 await board.initialize()
-            except RuntimeError as exc:
+            except Exception as exc:
                 typer.echo(f"Resync failed: {exc}")
                 return True
             typer.echo("Waiting for the next board update.")
@@ -609,29 +653,92 @@ def play(
         async def next_board_state(states: AsyncIterator[BoardState]) -> BoardState:
             return await states.__anext__()
 
+        async def cancel_task(task: asyncio.Task[object]) -> None:
+            task.cancel()
+            with suppress(asyncio.CancelledError, Exception):
+                await task
+
+        async def handle_board_connection_loss(error: BaseException) -> bool:
+            nonlocal board, device, previous
+            remove_terminal_reader()
+            if not _prompt_reconnect_to_board(error):
+                if controller.board.move_stack:
+                    _print_pgn(
+                        controller,
+                        white=pgn_white,
+                        black=pgn_black,
+                        white_elo=pgn_white_elo,
+                        black_elo=pgn_black_elo,
+                        result="*",
+                        termination="Board connection lost; user quit reconnect prompt",
+                    )
+                return False
+
+            while True:
+                typer.echo("Rescanning/reconnecting to board. Keeping game and PGN intact.")
+                try:
+                    device = await _resolve_board(address or device.address, scan_timeout=scan_timeout)
+                except Exception as reconnect_error:
+                    if not _prompt_reconnect_to_board(reconnect_error):
+                        if controller.board.move_stack:
+                            _print_pgn(
+                                controller,
+                                white=pgn_white,
+                                black=pgn_black,
+                                white_elo=pgn_white_elo,
+                                black_elo=pgn_black_elo,
+                                result="*",
+                                termination="Board reconnect failed; user quit reconnect prompt",
+                            )
+                        return False
+                    continue
+
+                board = ChessnutBoard(device)
+                previous = None
+                typer.echo(f"Reconnected to {device.name} {device.address}.")
+                typer.echo("Waiting for the next board update.")
+                install_terminal_reader()
+                return True
+
         async def watch_with_commands() -> AsyncIterator[BoardState]:
-            states = board.watch().__aiter__()
-            state_task = asyncio.create_task(next_board_state(states))
             command_task = asyncio.create_task(command_queue.get())
             try:
                 while True:
-                    done, _pending = await asyncio.wait(
-                        {state_task, command_task},
-                        return_when=asyncio.FIRST_COMPLETED,
-                    )
-                    if command_task in done:
-                        if not await handle_command(command_task.result()):
-                            state_task.cancel()
-                            break
-                        command_task = asyncio.create_task(command_queue.get())
-                        continue
-
-                    state = state_task.result()
-                    yield state
+                    states = board.watch().__aiter__()
                     state_task = asyncio.create_task(next_board_state(states))
+                    try:
+                        while True:
+                            done, _pending = await asyncio.wait(
+                                {state_task, command_task},
+                                return_when=asyncio.FIRST_COMPLETED,
+                            )
+                            if command_task in done:
+                                try:
+                                    keep_going = await handle_command(command_task.result())
+                                except Exception as exc:
+                                    await cancel_task(state_task)
+                                    if not await handle_board_connection_loss(exc):
+                                        return
+                                    command_task = asyncio.create_task(command_queue.get())
+                                    break
+                                if not keep_going:
+                                    await cancel_task(state_task)
+                                    return
+                                command_task = asyncio.create_task(command_queue.get())
+                                continue
+
+                            try:
+                                state = state_task.result()
+                            except Exception as exc:
+                                if not await handle_board_connection_loss(exc):
+                                    return
+                                break
+                            yield state
+                            state_task = asyncio.create_task(next_board_state(states))
+                    finally:
+                        await cancel_task(state_task)
             finally:
-                state_task.cancel()
-                command_task.cancel()
+                await cancel_task(command_task)
 
         try:
             async for state in watch_with_commands():
@@ -780,6 +887,16 @@ def play(
                 result="*",
                 termination="Interrupted by user",
             )
+    except Exception as exc:
+        _print_crash_pgn(
+            controller,
+            white=pgn_white,
+            black=pgn_black,
+            white_elo=pgn_white_elo,
+            black_elo=pgn_black_elo,
+            error=exc,
+        )
+        raise
 
 
 if __name__ == "__main__":

@@ -120,8 +120,10 @@ class ChessnutBoard:
 
     async def disconnect(self) -> None:
         if self._client is not None:
-            await self._client.disconnect()
-            self._client = None
+            try:
+                await self._client.disconnect()
+            finally:
+                self._client = None
 
     async def initialize(self) -> None:
         if self._client is None:
@@ -150,7 +152,10 @@ class ChessnutBoard:
             return await asyncio.wait_for(queue.get(), timeout=timeout)
         finally:
             if self._client is not None:
-                await self._client.stop_notify(READ_DATA_CHARACTERISTIC)
+                try:
+                    await self._client.stop_notify(READ_DATA_CHARACTERISTIC)
+                except Exception:
+                    pass
             await self.disconnect()
 
     async def read_battery(self, timeout: float = 5.0) -> BoardBattery:
@@ -183,7 +188,10 @@ class ChessnutBoard:
             await self._client.write_gatt_char(WRITE_CHARACTERISTIC, BATTERY_COMMAND)
             return await asyncio.wait_for(queue.get(), timeout=timeout)
         finally:
-            await self._client.stop_notify(READ_CONFIRMATION_CHARACTERISTIC)
+            try:
+                await self._client.stop_notify(READ_CONFIRMATION_CHARACTERISTIC)
+            except Exception:
+                pass
 
     async def watch(self) -> AsyncIterator[BoardState]:
         """Keep the board connected and yield each decoded board state."""
@@ -207,7 +215,10 @@ class ChessnutBoard:
                 yield await queue.get()
         finally:
             if self._client is not None:
-                await self._client.stop_notify(READ_DATA_CHARACTERISTIC)
+                try:
+                    await self._client.stop_notify(READ_DATA_CHARACTERISTIC)
+                except Exception:
+                    pass
             await self.disconnect()
 
     async def set_leds(self, squares: Iterable[str]) -> None:
