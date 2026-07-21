@@ -171,6 +171,59 @@ def test_format_pgn_skips_stale_takeback_variation_after_new_mainline() -> None:
     assert "Nf4" not in pgn
 
 
+def test_format_pgn_preserves_deeper_takebacks_as_continued_variation() -> None:
+    controller = GameController()
+    for move in [
+        "e2e4",
+        "e7e6",
+        "d2d4",
+        "d7d5",
+        "e4d5",
+        "e6d5",
+        "f1d3",
+        "f8d6",
+        "h2h3",
+        "g8e7",
+        "g1f3",
+        "b8c6",
+        "c2c3",
+        "c8e6",
+        "e1g1",
+        "d8d7",
+        "f1e1",
+        "f7f6",
+        "d1e2",
+        "e6h3",
+        "g2h3",
+        "d7h3",
+        "b1d2",
+        "e8c8",
+        "e2f1",
+        "h3d7",
+        "f1g2",
+        "c8b8",
+        "d2b3",
+        "e7g6",
+        "b3c5",
+        "d6c5",
+        "d4c5",
+        "g6f4",
+        "c1f4",
+    ]:
+        controller.board.push(chess.Move.from_uci(move))
+
+    controller.takeback_last_turn()
+    controller.takeback_last_turn()
+    controller.takeback_last_turn()
+    for move in ["g7g5", "b3c5", "d6c5", "d4c5"]:
+        controller.board.push(chess.Move.from_uci(move))
+
+    pgn = _format_pgn(controller, white="maia3", black="Human", result="*")
+
+    assert "15. Nb3 g5" in pgn
+    assert "( 15... Ng6 16. Nc5 Bxc5 17. dxc5 Nf4 18. Bxf4 )" in pgn
+
+
 def test_print_crash_pgn_outputs_partial_game(capsys) -> None:
     controller = GameController()
     controller.board.push(chess.Move.from_uci("d2d4"))

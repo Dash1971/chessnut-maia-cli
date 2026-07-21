@@ -151,12 +151,22 @@ def _pgn_game_from_controller(controller: GameController) -> "chess.pgn.Game":
     import chess.pgn
 
     game = chess.pgn.Game.from_board(controller.board)
-    for variation in controller.takeback_variations:
-        base_node = _pgn_node_at_ply(game, variation.base_ply)
-        if base_node is None:
-            continue
-        _add_pgn_variation_if_legal(base_node, variation.moves)
+    for variation in sorted(controller.takeback_variations, key=lambda item: item.base_ply):
+        _add_pgn_variation_to_deepest_legal_node(game, variation.base_ply, variation.moves)
     return game
+
+
+def _add_pgn_variation_to_deepest_legal_node(
+    game: "chess.pgn.Game",
+    base_ply: int,
+    moves: tuple["chess.Move", ...],
+) -> bool:
+    candidate_nodes = _pgn_nodes_at_ply(game, base_ply)
+    candidate_nodes.sort(key=lambda item: item[1], reverse=True)
+    for base_node, _branch_depth in candidate_nodes:
+        if _add_pgn_variation_if_legal(base_node, moves):
+            return True
+    return False
 
 
 def _add_pgn_variation_if_legal(
@@ -171,6 +181,22 @@ def _add_pgn_variation_if_legal(
         node = node.add_variation(move)
         board.push(move)
     return True
+
+
+def _pgn_nodes_at_ply(
+    game: "chess.pgn.Game",
+    ply: int,
+) -> list[tuple["chess.pgn.GameNode", int]]:
+    nodes: list[tuple["chess.pgn.GameNode", int]] = []
+
+    def visit(node: "chess.pgn.GameNode", branch_depth: int) -> None:
+        if node.ply() == ply:
+            nodes.append((node, branch_depth))
+        for index, child in enumerate(node.variations):
+            visit(child, branch_depth + (1 if index > 0 else 0))
+
+    visit(game, 0)
+    return nodes
 
 
 def _pgn_node_at_ply(game: "chess.pgn.Game", ply: int) -> "chess.pgn.GameNode | None":
