@@ -245,12 +245,21 @@ the reverted internal position. Restore the lit squares physically. Play resumes
 only after the board exactly matches the reverted position.
 
 Taken-back moves are kept in the final PGN as alternate lines. The moves played
-after the takeback become the main line.
+after the takeback become the main line. If you take back multiple times, older
+taken-back branches are preserved as continued variations when they are still
+legal inside the earlier branch. This lets the PGN keep deeper rejected lines
+instead of losing them or blocking PGN export.
 
 Example shape:
 
 ```pgn
 1. d4 ( 1. e4 e5 ) 1... d5
+```
+
+Multiple-takeback example shape:
+
+```pgn
+15. Nb3 g5 ( 15... Ng6 16. Nc5 Bxc5 17. dxc5 Nf4 18. Bxf4 ) 16. Nc5
 ```
 
 ## Check And Illegal-Move Alerts
