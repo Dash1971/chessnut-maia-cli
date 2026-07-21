@@ -13,7 +13,7 @@ from chessnut_maia_cli.cli import (
     _resignation_result,
     _save_pgn,
 )
-from chessnut_maia_cli.game import GameController
+from chessnut_maia_cli.game import GameController, TakebackVariation
 
 
 def test_format_pgn_supports_human_as_black() -> None:
@@ -114,6 +114,61 @@ def test_format_pgn_keeps_taken_back_moves_as_variation() -> None:
     assert "1. d4" in pgn
     assert "1... d5" in pgn
     assert "( 1. e4 e5 )" in pgn
+
+
+def test_format_pgn_skips_stale_takeback_variation_after_new_mainline() -> None:
+    controller = GameController()
+    moves = [
+        "e2e4",
+        "e7e6",
+        "d2d4",
+        "d7d5",
+        "e4d5",
+        "e6d5",
+        "f1d3",
+        "f8d6",
+        "h2h3",
+        "g8e7",
+        "g1f3",
+        "b8c6",
+        "c2c3",
+        "c8e6",
+        "e1g1",
+        "d8d7",
+        "f1e1",
+        "f7f6",
+        "d1e2",
+        "e6h3",
+        "g2h3",
+        "d7h3",
+        "b1d2",
+        "e8c8",
+        "e2f1",
+        "h3d7",
+        "f1g2",
+        "c8b8",
+        "d2b3",
+        "g7g5",
+        "b3c5",
+        "d6c5",
+        "d4c5",
+    ]
+    for move in moves:
+        controller.board.push(chess.Move.from_uci(move))
+    controller.takeback_variations.append(
+        TakebackVariation(
+            base_ply=len(moves),
+            moves=(
+                chess.Move.from_uci("g6f4"),
+                chess.Move.from_uci("c1f4"),
+            ),
+        )
+    )
+
+    pgn = _format_pgn(controller, white="maia3", black="Human", result="*")
+
+    assert "15. Nb3 g5" in pgn
+    assert "Nf4" not in pgn
 
 
 def test_print_crash_pgn_outputs_partial_game(capsys) -> None:

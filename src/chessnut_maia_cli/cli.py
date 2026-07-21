@@ -155,10 +155,22 @@ def _pgn_game_from_controller(controller: GameController) -> "chess.pgn.Game":
         base_node = _pgn_node_at_ply(game, variation.base_ply)
         if base_node is None:
             continue
-        node = base_node
-        for move in variation.moves:
-            node = node.add_variation(move)
+        _add_pgn_variation_if_legal(base_node, variation.moves)
     return game
+
+
+def _add_pgn_variation_if_legal(
+    base_node: "chess.pgn.GameNode",
+    moves: tuple["chess.Move", ...],
+) -> bool:
+    board = base_node.board()
+    node = base_node
+    for move in moves:
+        if move not in board.legal_moves:
+            return False
+        node = node.add_variation(move)
+        board.push(move)
+    return True
 
 
 def _pgn_node_at_ply(game: "chess.pgn.Game", ply: int) -> "chess.pgn.GameNode | None":
