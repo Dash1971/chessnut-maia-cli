@@ -2,6 +2,7 @@
 
 import chess
 import pytest
+import asyncio
 
 from chessnut_maia_cli.cli import (
     PLAY_COMMANDS,
@@ -10,6 +11,7 @@ from chessnut_maia_cli.cli import (
     _parse_player_color,
     _print_crash_pgn,
     _prompt_reconnect_to_board,
+    _resync_board,
     _resignation_result,
     _save_pgn,
 )
@@ -262,6 +264,18 @@ def test_prompt_reconnect_to_board_reprompts_invalid_choice(monkeypatch, capsys)
 
     assert _prompt_reconnect_to_board(RuntimeError("lost")) is True
     assert "Please enter r to reconnect or q to quit." in capsys.readouterr().out
+
+
+def test_resync_board_propagates_ble_errors() -> None:
+    class DeadBoard:
+        async def set_leds(self, _squares) -> None:
+            raise RuntimeError("Service Discovery has not been performed yet")
+
+        async def initialize(self) -> None:
+            raise AssertionError("initialize should not run after LED write failure")
+
+    with pytest.raises(RuntimeError, match="Service Discovery"):
+        asyncio.run(_resync_board(DeadBoard()))
 
 
 @pytest.mark.parametrize(

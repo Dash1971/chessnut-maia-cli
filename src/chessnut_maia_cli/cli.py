@@ -327,6 +327,11 @@ def _pending_human_move_message(controller: GameController, color_name: str) -> 
     return f"{color_name} move: pending (in check from {checkers}; move must answer check)"
 
 
+async def _resync_board(board: ChessnutBoard) -> None:
+    await board.set_leds([])
+    await board.initialize()
+
+
 def _prompt_reconnect_to_board(error: BaseException) -> bool:
     typer.echo("")
     typer.echo(f"Board connection lost: {error}")
@@ -679,12 +684,7 @@ def play(
             previous = None
             waiting_for_engine_move = False
             takeback_restore_active = False
-            try:
-                await board.set_leds([])
-                await board.initialize()
-            except Exception as exc:
-                typer.echo(f"Resync failed: {exc}")
-                return True
+            await _resync_board(board)
             typer.echo("Waiting for the next board update.")
             return True
 

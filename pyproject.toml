@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "chessnut-maia-cli"
-version = "0.1.0"
+version = "0.1.1"
 description = "CLI bridge for playing Maia2 and Maia3 on a Chessnut Go board over Bluetooth."
 readme = "README.md"
 requires-python = ">=3.10"
